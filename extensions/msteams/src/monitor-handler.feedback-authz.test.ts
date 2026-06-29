@@ -51,9 +51,19 @@ function createRuntimeStub(readAllowFromStore: ReturnType<typeof vi.fn>): Plugin
         upsertPairingRequest: vi.fn(async () => null),
       },
       routing: {
-        resolveAgentRoute: ({ peer }: { peer: { kind: string; id: string } }) => ({
-          sessionKey: `msteams:${peer.kind}:${peer.id}`,
+        resolveAgentRoute: ({
+          accountId,
+          peer,
+        }: {
+          accountId?: string;
+          peer: { kind: string; id: string };
+        }) => ({
+          sessionKey:
+            accountId && accountId !== "default"
+              ? `msteams:${accountId}:${peer.kind}:${peer.id}`
+              : `msteams:${peer.kind}:${peer.id}`,
           agentId: "default",
+          accountId: accountId ?? "default",
         }),
       },
       session: {
@@ -65,14 +75,18 @@ function createRuntimeStub(readAllowFromStore: ReturnType<typeof vi.fn>): Plugin
 
 function createDeps(params: {
   cfg: OpenClawConfig;
+  accountId?: string;
   readAllowFromStore?: ReturnType<typeof vi.fn>;
 }): MSTeamsMessageHandlerDeps {
   const readAllowFromStore = params.readAllowFromStore ?? vi.fn(async () => []);
   setMSTeamsRuntime(createRuntimeStub(readAllowFromStore));
-  return createMSTeamsMessageHandlerDeps({
-    cfg: params.cfg,
-    runtime: { error: vi.fn() } as unknown as RuntimeEnv,
-  });
+  return {
+    ...createMSTeamsMessageHandlerDeps({
+      cfg: params.cfg,
+      runtime: { error: vi.fn() } as unknown as RuntimeEnv,
+    }),
+    accountId: params.accountId ?? "default",
+  };
 }
 
 function createFeedbackInvokeContext(params: {
@@ -84,12 +98,36 @@ function createFeedbackInvokeContext(params: {
   teamId?: string;
   channelName?: string;
   comment?: string;
+  feedback?: string;
+  replyToId?: string;
+  valueReplyToId?: string | false;
+  activityType?: string;
+  invokeName?: string;
 }): MSTeamsTurnContext {
+  const value: {
+    actionName: string;
+    actionValue: {
+      reaction: "like" | "dislike";
+      feedback: string;
+    };
+    replyToId?: string;
+  } = {
+    actionName: "feedback",
+    actionValue: {
+      reaction: params.reaction,
+      feedback:
+        params.feedback ?? JSON.stringify({ feedbackText: params.comment ?? "feedback text" }),
+    },
+  };
+  if (params.valueReplyToId !== false) {
+    value.replyToId = params.valueReplyToId ?? "bot-msg-1";
+  }
+
   return {
     activity: {
       id: `invoke-${params.reaction}`,
-      type: "invoke",
-      name: "message/submitAction",
+      type: params.activityType ?? "invoke",
+      name: params.invokeName ?? "message/submitAction",
       channelId: "msteams",
       serviceUrl: "https://service.example.test",
       from: {
@@ -112,18 +150,34 @@ function createFeedbackInvokeContext(params: {
             channel: params.channelName ? { name: params.channelName } : undefined,
           }
         : {},
-      value: {
-        actionName: "feedback",
-        actionValue: {
-          reaction: params.reaction,
-          feedback: JSON.stringify({ feedbackText: params.comment ?? "feedback text" }),
-        },
-        replyToId: "bot-msg-1",
-      },
+      replyToId: params.replyToId,
+      value,
     },
     sendActivity: vi.fn(async () => ({ id: "ignored" })),
     sendActivities: async () => [],
   } as unknown as MSTeamsTurnContext;
+}
+
+async function runFeedbackHandlerInTempStore(params: {
+  cfg: OpenClawConfig;
+  context: MSTeamsTurnContext;
+  accountId?: string;
+  assertResult: (args: { tmpDir: string; consumed: boolean }) => Promise<void>;
+}) {
+  const tmpDir = await mkdtemp(path.join(tmpdir(), "openclaw-msteams-feedback-"));
+  try {
+    const deps = createDeps({
+      cfg: {
+        ...params.cfg,
+        session: { store: tmpDir },
+      } as OpenClawConfig,
+      accountId: params.accountId,
+    });
+    const consumed = await runMSTeamsFeedbackInvokeHandler(params.context, deps);
+    await params.assertResult({ tmpDir, consumed });
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
 }
 
 async function expectFileMissing(filePath: string) {
@@ -140,27 +194,198 @@ async function expectFileMissing(filePath: string) {
 async function withFeedbackHandler(params: {
   cfg: OpenClawConfig;
   context: Parameters<typeof createFeedbackInvokeContext>[0];
+  accountId?: string;
   assertResult: (args: { tmpDir: string }) => Promise<void>;
 }) {
-  const tmpDir = await mkdtemp(path.join(tmpdir(), "openclaw-msteams-feedback-"));
-  try {
-    const deps = createDeps({
-      cfg: {
-        ...params.cfg,
-        session: { store: tmpDir },
-      },
-    });
-    await runMSTeamsFeedbackInvokeHandler(createFeedbackInvokeContext(params.context), deps);
-    await params.assertResult({ tmpDir });
-  } finally {
-    await rm(tmpDir, { recursive: true, force: true });
-  }
+  await runFeedbackHandlerInTempStore({
+    cfg: params.cfg,
+    accountId: params.accountId,
+    context: createFeedbackInvokeContext(params.context),
+    assertResult: async ({ tmpDir }) => params.assertResult({ tmpDir }),
+  });
 }
 
 describe("msteams feedback invoke authz", () => {
   beforeEach(() => {
     feedbackReflectionMockState.runFeedbackReflection.mockReset();
     feedbackReflectionMockState.runFeedbackReflection.mockResolvedValue(undefined);
+  });
+
+  it("falls through activities that are not Teams feedback submit invokes", async () => {
+    await runFeedbackHandlerInTempStore({
+      cfg: {
+        channels: {
+          msteams: {
+            dmPolicy: "allowlist",
+            allowFrom: ["owner-aad"],
+          },
+        },
+      } as OpenClawConfig,
+      context: createFeedbackInvokeContext({
+        activityType: "message",
+        reaction: "like",
+        conversationId: "a:personal-chat",
+        conversationType: "personal",
+        senderId: "owner-aad",
+      }),
+      assertResult: async ({ tmpDir, consumed }) => {
+        expect(consumed).toBe(false);
+        await expectFileMissing(path.join(tmpDir, "msteams_direct_owner-aad.jsonl"));
+      },
+    });
+  });
+
+  it("records captured no-comment thumbs-up feedback without a comment field", async () => {
+    await withFeedbackHandler({
+      cfg: {
+        channels: {
+          msteams: {
+            dmPolicy: "allowlist",
+            allowFrom: ["owner-aad"],
+          },
+        },
+      } as OpenClawConfig,
+      context: {
+        reaction: "like",
+        conversationId: "a:personal-chat",
+        conversationType: "personal",
+        senderId: "owner-aad",
+        senderName: "Owner",
+        feedback: "{}",
+        replyToId: "1782644926041",
+        valueReplyToId: false,
+      },
+      assertResult: async ({ tmpDir }) => {
+        const transcript = await readFile(
+          path.join(tmpDir, "msteams_direct_owner-aad.jsonl"),
+          "utf-8",
+        );
+        const event = JSON.parse(transcript.trim()) as Record<string, unknown>;
+        expect(event).not.toHaveProperty("comment");
+        expect({ ...event, ts: 0 }).toEqual({
+          type: "custom",
+          event: "feedback",
+          ts: 0,
+          messageId: "1782644926041",
+          value: "positive",
+          sessionKey: "msteams:direct:owner-aad",
+          agentId: "default",
+          conversationId: "a:personal-chat",
+        });
+      },
+    });
+  });
+
+  it("records captured comment-bearing feedback from the JSON string body", async () => {
+    await withFeedbackHandler({
+      cfg: {
+        channels: {
+          msteams: {
+            groupPolicy: "open",
+          },
+        },
+      } as OpenClawConfig,
+      context: {
+        reaction: "like",
+        conversationId: "19:group-chat@unq.gbl.spaces",
+        conversationType: "groupChat",
+        senderId: "owner-aad",
+        senderName: "Owner",
+        feedback: JSON.stringify({
+          feedbackText: "Helpful payload-study reply. Please capture this feedback comment.",
+        }),
+        replyToId: "1782646068908",
+        valueReplyToId: false,
+      },
+      assertResult: async ({ tmpDir }) => {
+        const transcript = await readFile(
+          path.join(tmpDir, "msteams_group_19_group-chat_unq_gbl_spaces.jsonl"),
+          "utf-8",
+        );
+        const event = JSON.parse(transcript.trim()) as Record<string, unknown>;
+        expect({ ...event, ts: 0 }).toEqual({
+          type: "custom",
+          event: "feedback",
+          ts: 0,
+          messageId: "1782646068908",
+          value: "positive",
+          comment: "Helpful payload-study reply. Please capture this feedback comment.",
+          sessionKey: "msteams:group:19:group-chat@unq.gbl.spaces",
+          agentId: "default",
+          conversationId: "19:group-chat@unq.gbl.spaces",
+        });
+      },
+    });
+  });
+
+  it("honors account-scoped feedbackEnabled=false over the global default", async () => {
+    await withFeedbackHandler({
+      cfg: {
+        channels: {
+          msteams: {
+            dmPolicy: "allowlist",
+            allowFrom: ["owner-aad"],
+            feedbackEnabled: true,
+            accounts: {
+              legal: {
+                dmPolicy: "allowlist",
+                allowFrom: ["owner-aad"],
+                feedbackEnabled: false,
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      accountId: "legal",
+      context: {
+        reaction: "like",
+        conversationId: "a:legal-personal-chat",
+        conversationType: "personal",
+        senderId: "owner-aad",
+        feedback: "{}",
+      },
+      assertResult: async ({ tmpDir }) => {
+        await expectFileMissing(path.join(tmpDir, "msteams_legal_direct_owner-aad.jsonl"));
+      },
+    });
+  });
+
+  it("honors account-scoped feedbackReflection=false for negative feedback", async () => {
+    await withFeedbackHandler({
+      cfg: {
+        channels: {
+          msteams: {
+            dmPolicy: "allowlist",
+            allowFrom: ["owner-aad"],
+            feedbackReflection: true,
+            accounts: {
+              legal: {
+                dmPolicy: "allowlist",
+                allowFrom: ["owner-aad"],
+                feedbackReflection: false,
+              },
+            },
+          },
+        },
+      } as OpenClawConfig,
+      accountId: "legal",
+      context: {
+        reaction: "dislike",
+        conversationId: "a:legal-personal-chat",
+        conversationType: "personal",
+        senderId: "owner-aad",
+        comment: "negative feedback from legal account",
+      },
+      assertResult: async ({ tmpDir }) => {
+        const transcript = await readFile(
+          path.join(tmpDir, "msteams_legal_direct_owner-aad.jsonl"),
+          "utf-8",
+        );
+        const event = JSON.parse(transcript.trim()) as Record<string, unknown>;
+        expect(event.value).toBe("negative");
+        expect(feedbackReflectionMockState.runFeedbackReflection).not.toHaveBeenCalled();
+      },
+    });
   });
 
   it("records feedback for an allowlisted DM sender", async () => {

@@ -32,6 +32,10 @@ export async function runMSTeamsFeedbackInvokeHandler(
   deps: MSTeamsMessageHandlerDeps,
 ): Promise<boolean> {
   const activity = context.activity;
+  if (activity.type !== "invoke" || activity.name !== "message/submitAction") {
+    return false;
+  }
+
   const value = activity.value as
     | {
         actionName?: string;
