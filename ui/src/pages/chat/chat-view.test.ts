@@ -686,6 +686,19 @@ describe("chat compaction divider", () => {
   });
 });
 
+describe("chat conversation width", () => {
+  it("applies a configured width once to the centered transcript frame", () => {
+    const container = renderChatView({
+      chatMessageMaxWidth: "82%",
+      messages: [{ role: "assistant", content: "hello", timestamp: 1 }],
+    });
+    const chat = container.querySelector<HTMLElement>(".chat");
+
+    expect(chat?.style.getPropertyValue("--chat-thread-max-width")).toBe("82%");
+    expect(chat?.style.getPropertyValue("--chat-message-max-width")).toBe("100%");
+  });
+});
+
 describe("direct thread avatar mode", () => {
   function sessionsListWithKind(sessionKey: string, kind: "direct" | "group" | "global") {
     return {
@@ -1463,7 +1476,7 @@ describe("chat composer workbench", () => {
 
     // A collapsed rail renders nothing — no icon strip in the layout.
     expect(container.querySelector(".chat-workspace-rail")).toBeNull();
-    const toggle = container.querySelector<HTMLButtonElement>(".chat-workspace-open");
+    const toggle = container.querySelector<HTMLButtonElement>(".chat-workspace-toggle");
     expect(toggle?.getAttribute("aria-label")).toBe("Show session files");
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(toggle?.getAttribute("aria-keyshortcuts")).toBe("Meta+Shift+B");
@@ -1523,7 +1536,7 @@ describe("chat composer workbench", () => {
       },
     });
 
-    expect(container.querySelector(".chat-workspace-open")).toBeNull();
+    expect(container.querySelector(".chat-workspace-toggle")).toBeNull();
     expect(container.querySelector(".chat-workspace-rail")).toBeNull();
   });
 

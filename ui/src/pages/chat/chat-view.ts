@@ -310,7 +310,12 @@ export function renderChat(props: ChatProps) {
       })}
       class="card chat"
       style=${styleMap(
-        props.chatMessageMaxWidth ? { "--chat-message-max-width": props.chatMessageMaxWidth } : {},
+        props.chatMessageMaxWidth
+          ? {
+              "--chat-thread-max-width": props.chatMessageMaxWidth,
+              "--chat-message-max-width": "100%",
+            }
+          : {},
       )}
       @drop=${(event: DragEvent) => {
         event.preventDefault();
@@ -434,7 +439,7 @@ export function renderChat(props: ChatProps) {
                     ? html`
                         <openclaw-tooltip .content=${t("chat.splitView.open")}>
                           <button
-                            class="btn btn--sm btn--icon chat-open-split-view"
+                            class="btn btn--ghost btn--icon chat-icon-btn chat-open-split-view"
                             type="button"
                             aria-label=${t("chat.splitView.open")}
                             @click=${props.onOpenSplitView}
@@ -445,13 +450,13 @@ export function renderChat(props: ChatProps) {
                       `
                     : nothing}
                   ${props.sessionWorkspace?.collapsed
-                    ? renderSessionDiffToggle(props.sessionWorkspace, "floating")
+                    ? renderSessionDiffToggle(props.sessionWorkspace)
                     : nothing}
                   ${props.backgroundTasks?.collapsed
-                    ? renderBackgroundTasksToggle(props.backgroundTasks, "floating")
+                    ? renderBackgroundTasksToggle(props.backgroundTasks)
                     : nothing}
                   ${props.sessionWorkspace?.collapsed
-                    ? renderSessionWorkspaceToggle(props.sessionWorkspace, "floating")
+                    ? renderSessionWorkspaceToggle(props.sessionWorkspace)
                     : nothing}
                 </div>
               `

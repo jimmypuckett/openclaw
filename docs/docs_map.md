@@ -1376,7 +1376,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: What Crestodian shows
   - H2: Examples
   - H2: Operations and approval
-  - H3: Switching to the menu wizards
+  - H3: Switching to masked channel setup
   - H2: Setup bootstrap
   - H2: AI conversation
   - H3: CLI harness trust model
@@ -1497,6 +1497,25 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Post-upgrade mode
   - H2: Notes
   - H2: macOS: launchctl env overrides
+  - H2: Related
+
+## cli/fleet.md
+
+- Route: /cli/fleet
+- Headings:
+  - H1: openclaw fleet
+  - H2: Quick start
+  - H2: Tenant IDs
+  - H2: fleet create
+  - H3: Create options
+  - H2: fleet list
+  - H2: fleet status
+  - H2: fleet start, fleet stop, and fleet restart
+  - H2: fleet upgrade
+  - H2: fleet rm
+  - H2: Storage and container layout
+  - H2: Security profile
+  - H2: Token handling
   - H2: Related
 
 ## cli/flows.md
@@ -2840,6 +2859,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Listing and reading sessions
   - H2: Sending cross-session messages
   - H2: Status and orchestration helpers
+  - H2: Session state changes
   - H2: Spawning sub-agents
   - H2: Visibility
   - H2: Further reading
@@ -3246,6 +3266,8 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H3: gateway.tls
   - H3: gateway.reload
   - H2: Cloud worker environments
+  - H3: Crabbox profile
+  - H3: Static SSH development profile
   - H2: Hooks
   - H3: Gmail integration
   - H2: Canvas plugin host
@@ -3461,6 +3483,19 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Console formatting (subsystem logging)
   - H2: Related
 
+## gateway/multi-tenant-hosting.md
+
+- Route: /gateway/multi-tenant-hosting
+- Headings:
+  - H1: Multi-tenant hosting
+  - H2: Why each tenant needs a cell
+  - H2: Architecture
+  - H2: Trust boundary
+  - H2: Isolation ladder
+  - H2: Quick start
+  - H2: Deferred from the MVP
+  - H2: Related
+
 ## gateway/multiple-gateways.md
 
 - Route: /gateway/multiple-gateways
@@ -3623,6 +3658,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H3: Client capabilities
   - H3: Node connect example
   - H2: Roles and scopes
+  - H3: Caps/commands/permissions (node)
   - H2: Presence
   - H3: Node background alive event
   - H2: Broadcast event scoping
@@ -4743,11 +4779,14 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H3: Remote gateway via SSH tunnel (loopback bind)
   - H3: Start a node host (service)
   - H3: Pair + name
+  - H3: Node-hosted MCP servers
+  - H3: Node-hosted skills
   - H3: Headless identity state
   - H3: Allowlist the commands
   - H3: Point exec at the node
   - H3: Local model inference
   - H3: Codex sessions and transcripts
+  - H3: Claude sessions and transcripts
   - H2: Invoking commands
   - H2: Command policy
   - H2: Config (openclaw.json)
@@ -4866,7 +4905,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Components
   - H3: 1. Environment state machine + provider contract
   - H3: 2. Worker bootstrap: install OpenClaw on the box
-  - H3: 3. Transport: everything over one SSH connection
+  - H3: 3. Transport: everything over SSH
   - H3: 4. Worker protocol (dedicated; not the node protocol)
   - H3: 5. Session backend RPCs
   - H3: 6. Workspace sync
@@ -5206,6 +5245,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: First run
   - H2: Updates
   - H2: Open dashboard links
+  - H2: Import browser logins
   - H2: Choose a Gateway mode
   - H2: What the app owns
   - H2: macOS detail pages
@@ -5402,6 +5442,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Commands
   - H2: Marketplace choices
   - H2: Bundled macOS marketplace
+  - H3: Shared plugin cache
   - H2: Remote catalog limit
   - H2: Configuration reference
   - H2: What OpenClaw checks
@@ -6017,6 +6058,15 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Distribution
   - H2: Surface
   - H2: Related docs
+
+## plugins/reference/crabbox.md
+
+- Route: /plugins/reference/crabbox
+- Headings:
+  - H1: Crabbox plugin
+  - H2: Distribution
+  - H2: Surface
+  - H2: Configure
 
 ## plugins/reference/deepgram.md
 
@@ -6949,6 +6999,14 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: Surface
   - H2: Related docs
 
+## plugins/reference/workspaces.md
+
+- Route: /plugins/reference/workspaces
+- Headings:
+  - H1: Workspaces plugin
+  - H2: Distribution
+  - H2: Surface
+
 ## plugins/reference/xai.md
 
 - Route: /plugins/reference/xai
@@ -7001,6 +7059,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
   - H2: When to use a harness
   - H2: What core still owns
   - H3: Harness-owned auth bootstrap
+  - H3: Verified setup runtime artifacts
   - H2: Register a harness
   - H3: Delegated execution
   - H2: Selection policy
@@ -7045,6 +7104,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
 - Route: /plugins/sdk-channel-outbound
 - Headings:
   - H2: Adapter
+  - H2: Plain-text sanitization
   - H2: Delivery Evidence
   - H2: Existing outbound adapters
   - H2: Durable sends
@@ -7356,6 +7416,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
 - Headings:
   - H2: Usage and cost tracking
   - H2: Getting started
+  - H2: Claude sessions across computers
   - H2: Thinking defaults (Claude Sonnet 5, Mythos 5, Fable 5, 4.8, and 4.6)
   - H2: Safety refusal fallback (Claude Fable 5)
   - H3: Why this exists
@@ -9708,6 +9769,7 @@ Do not edit it by hand; run `pnpm docs:map:gen`.
 - Route: /tools/skills
 - Headings:
   - H2: Loading order
+  - H2: Node-hosted skills
   - H2: Per-agent vs shared skills
   - H2: Agent allowlists
   - H2: Plugins and skills
