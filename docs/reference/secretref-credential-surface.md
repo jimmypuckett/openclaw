@@ -48,6 +48,7 @@ Scope intent:
 - `plugins.entries.exa.config.webSearch.apiKey`
 - `plugins.entries.google-meet.config.realtime.providers.*.apiKey`
 - `plugins.entries.google.config.webSearch.apiKey`
+- `plugins.entries.m365.config.accounts.*.clientSecret`
 - `plugins.entries.xai.config.webSearch.apiKey`
 - `plugins.entries.moonshot.config.webSearch.apiKey`
 - `plugins.entries.perplexity.config.webSearch.apiKey`
