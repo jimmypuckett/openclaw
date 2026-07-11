@@ -1,0 +1,84 @@
+{
+  "id": "m365",
+  "name": "Microsoft 365 Graph",
+  "description": "Scoped Microsoft Graph mail and calendar tools for OpenClaw agents.",
+  "activation": {
+    "onStartup": false
+  },
+  "contracts": {
+    "tools": [
+      "m365_mail_list_recent",
+      "m365_mail_read",
+      "m365_mail_draft_reply",
+      "m365_mail_send",
+      "m365_calendar_list",
+      "m365_calendar_create",
+      "m365_calendar_update",
+      "m365_calendar_respond"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "accounts": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["tenantId", "clientId", "clientSecret", "mailbox"],
+          "properties": {
+            "tenantId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "clientSecret": {
+              "type": ["string", "object"]
+            },
+            "mailbox": {
+              "type": "string",
+              "minLength": 1
+            },
+            "allowedAgentIds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowedChannels": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "allowWrites": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "configContracts": {
+    "secretInputs": {
+      "bundledDefaultEnabled": false,
+      "paths": [
+        {
+          "path": "accounts.*.clientSecret",
+          "expected": "string"
+        }
+      ]
+    }
+  },
+  "uiHints": {
+    "accounts": {
+      "label": "Microsoft 365 Accounts",
+      "help": "Map OpenClaw account ids to scoped Microsoft Graph app credentials and mailbox ids."
+    }
+  }
+}
