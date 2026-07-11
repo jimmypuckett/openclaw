@@ -12,8 +12,12 @@ const GRAPH_ROOT = "https://graph.microsoft.com/v1.0";
 const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 const LOGIN_ROOT = "https://login.microsoftonline.com";
 const TOOL_NAMES = [
+  "m365_mail_search",
   "m365_mail_list_recent",
   "m365_mail_read",
+  "m365_calendar_view",
+  "m365_calendar_search",
+  "m365_calendar_event_read",
   "m365_calendar_list",
   "m365_mail_draft_reply",
   "m365_mail_send",
@@ -30,6 +34,8 @@ type M365AccountConfig = {
   allowedAgentIds?: string[];
   allowedChannels?: string[];
   allowWrites?: boolean;
+  timeZone?: string;
+  weekStartsOn?: "monday" | "sunday";
 };
 
 type M365PluginConfig = {
@@ -50,6 +56,9 @@ type GraphMessage = {
   body?: { contentType?: string; content?: string };
   webLink?: string;
   conversationId?: string;
+  isRead?: boolean;
+  hasAttachments?: boolean;
+  toRecipients?: Array<{ emailAddress?: { name?: string; address?: string } }>;
 };
 
 type GraphEvent = {
@@ -66,6 +75,24 @@ type GraphEvent = {
   location?: { displayName?: string };
   bodyPreview?: string;
   webLink?: string;
+  isAllDay?: boolean;
+  isCancelled?: boolean;
+  responseStatus?: { response?: string; time?: string };
+  type?: string;
+};
+
+type ReadEnvelope<T> = {
+  owner: string;
+  query: Record<string, unknown>;
+  resolvedTimeRange?: { start: string; end: string };
+  effectiveTimeZone: string;
+  items: T[];
+  coverageComplete: boolean;
+  pagesRead: number;
+  sourceFreshness: string;
+  warnings: string[];
+  errors: string[];
+  traceId: string;
 };
 
 type JsonSchema = Record<string, unknown>;
@@ -217,6 +244,7 @@ async function graphToken(ctx: OpenClawPluginToolContext): Promise<{
   token: string;
   mailbox: string;
   allowWrites: boolean;
+  timeZone: string;
 }> {
   const { accountId, account, runtimeConfig } = resolveAccountConfig(ctx);
   const tenantId = account.tenantId?.trim();
@@ -236,7 +264,12 @@ async function graphToken(ctx: OpenClawPluginToolContext): Promise<{
     clientSecret,
     accountId,
   });
-  return { token, mailbox, allowWrites: account.allowWrites === true };
+  return {
+    token,
+    mailbox,
+    allowWrites: account.allowWrites === true,
+    timeZone: account.timeZone?.trim() || "UTC",
+  };
 }
 
 async function graphJson<T>(params: {
@@ -244,6 +277,7 @@ async function graphJson<T>(params: {
   path: string;
   method?: "GET" | "POST" | "PATCH";
   body?: unknown;
+  headers?: Record<string, string>;
 }): Promise<T> {
   const url = params.path.startsWith("https://") ? params.path : `${GRAPH_ROOT}${params.path}`;
   const { response, release } = await fetchWithSsrFGuard({
@@ -254,6 +288,7 @@ async function graphJson<T>(params: {
         Authorization: `Bearer ${params.token}`,
         "Content-Type": "application/json",
         "User-Agent": "OpenClaw m365 plugin",
+        ...params.headers,
       },
       body: params.body === undefined ? undefined : JSON.stringify(params.body),
     },
@@ -277,6 +312,72 @@ async function graphJson<T>(params: {
   } finally {
     await release();
   }
+}
+
+function traceId(): string {
+  return `m365-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function envelope<T>(params: {
+  owner: string;
+  query: Record<string, unknown>;
+  items: T[];
+  timeZone: string;
+  pagesRead?: number;
+  coverageComplete?: boolean;
+  range?: { start: string; end: string };
+  warnings?: string[];
+  errors?: string[];
+}): ReadEnvelope<T> {
+  return {
+    owner: params.owner,
+    query: params.query,
+    ...(params.range ? { resolvedTimeRange: params.range } : {}),
+    effectiveTimeZone: params.timeZone,
+    items: params.items,
+    coverageComplete: params.coverageComplete ?? true,
+    pagesRead: params.pagesRead ?? 1,
+    sourceFreshness: new Date().toISOString(),
+    warnings: params.warnings ?? [],
+    errors: params.errors ?? [],
+    traceId: traceId(),
+  };
+}
+
+async function graphPaged<T>(params: {
+  token: string;
+  path: string;
+  headers?: Record<string, string>;
+  maxPages: number;
+}): Promise<{ items: T[]; pagesRead: number; coverageComplete: boolean; warnings: string[] }> {
+  const items: T[] = [];
+  let path: string | undefined = params.path;
+  let pagesRead = 0;
+  while (path && pagesRead < params.maxPages) {
+    const page: GraphPaged<T> = await graphJson<GraphPaged<T>>({
+      token: params.token,
+      path,
+      headers: params.headers,
+    });
+    items.push(...(page.value ?? []));
+    pagesRead += 1;
+    path = page["@odata.nextLink"];
+  }
+  return {
+    items,
+    pagesRead,
+    coverageComplete: !path,
+    warnings: path
+      ? [`Result set exceeded the configured ${params.maxPages}-page safety limit.`]
+      : [],
+  };
+}
+
+function requireDateTime(value: string | undefined, name: string): string {
+  if (!value || Number.isNaN(Date.parse(value))) {
+    throw new Error(`${name} must be a valid ISO 8601 date-time`);
+  }
+  return value;
 }
 
 function readRecord(params: unknown): Record<string, unknown> {
@@ -323,6 +424,71 @@ function graphAttendees(addresses: string[]): Array<{
 
 function createTools(ctx: OpenClawPluginToolContext): AnyAgentTool[] {
   return [
+    {
+      name: "m365_mail_search",
+      label: "Search mail",
+      description:
+        "Search the owner's scoped mailbox using bounded dates and structured filters. Returns coverage metadata; use this for questions about a period, person, topic, unread mail, or attachments.",
+      parameters: objectSchema({
+        startDateTime: stringSchema(),
+        endDateTime: stringSchema(),
+        sender: stringSchema(),
+        subject: stringSchema(),
+        conversationId: stringSchema(),
+        unreadOnly: booleanSchema({ default: false }),
+        hasAttachments: booleanSchema(),
+        pageSize: numberSchema({ minimum: 1, maximum: 50, default: 25 }),
+        maxPages: numberSchema({ minimum: 1, maximum: 20, default: 10 }),
+      }),
+      async execute(_toolCallId, params) {
+        const args = readRecord(params);
+        const { token, mailbox, timeZone } = await graphToken(ctx);
+        const filters: string[] = [];
+        const start = readString(args, "startDateTime");
+        const end = readString(args, "endDateTime");
+        if (start) filters.push(`receivedDateTime ge ${requireDateTime(start, "startDateTime")}`);
+        if (end) filters.push(`receivedDateTime lt ${requireDateTime(end, "endDateTime")}`);
+        if (readBoolean(args, "unreadOnly", false)) filters.push("isRead eq false");
+        if (typeof args.hasAttachments === "boolean") {
+          filters.push(`hasAttachments eq ${String(args.hasAttachments)}`);
+        }
+        const sender = readString(args, "sender");
+        if (sender) filters.push(`from/emailAddress/address eq '${sender.replaceAll("'", "''")}'`);
+        const conversationId = readString(args, "conversationId");
+        if (conversationId)
+          filters.push(`conversationId eq '${conversationId.replaceAll("'", "''")}'`);
+        const subject = readString(args, "subject")?.toLowerCase();
+        const pageSize = readNumber(args, "pageSize", 25);
+        const select =
+          "id,subject,from,toRecipients,receivedDateTime,bodyPreview,webLink,conversationId,isRead,hasAttachments";
+        const query = new URLSearchParams({
+          $top: String(pageSize),
+          $orderby: "receivedDateTime desc",
+          $select: select,
+          ...(filters.length ? { $filter: filters.join(" and ") } : {}),
+        });
+        const page = await graphPaged<GraphMessage>({
+          token,
+          path: `/users/${encodeURIComponent(mailbox)}/messages?${query.toString()}`,
+          maxPages: readNumber(args, "maxPages", 10),
+        });
+        const items = subject
+          ? page.items.filter((message) => message.subject?.toLowerCase().includes(subject))
+          : page.items;
+        return jsonResult(
+          envelope({
+            owner: mailbox,
+            query: { start, end, sender, subject, conversationId },
+            items,
+            timeZone,
+            pagesRead: page.pagesRead,
+            coverageComplete: page.coverageComplete,
+            ...(start && end ? { range: { start, end } } : {}),
+            warnings: page.warnings,
+          }),
+        );
+      },
+    },
     {
       name: "m365_mail_list_recent",
       label: "List recent mail",
@@ -381,6 +547,143 @@ function createTools(ctx: OpenClawPluginToolContext): AnyAgentTool[] {
       },
     },
     {
+      name: "m365_calendar_view",
+      label: "View calendar range",
+      description:
+        "Read every event instance in an exact half-open local-time range. Use for day, week, month, workload, briefing, and absence questions. Always tell the user the resolved dates.",
+      parameters: objectSchema(
+        {
+          startDateTime: stringSchema({ minLength: 1 }),
+          endDateTime: stringSchema({ minLength: 1 }),
+          timeZone: stringSchema(),
+          maxPages: numberSchema({ minimum: 1, maximum: 20, default: 10 }),
+        },
+        ["startDateTime", "endDateTime"],
+      ),
+      async execute(_toolCallId, params) {
+        const args = readRecord(params);
+        const { token, mailbox, timeZone: ownerTimeZone } = await graphToken(ctx);
+        const start = requireDateTime(readString(args, "startDateTime"), "startDateTime");
+        const end = requireDateTime(readString(args, "endDateTime"), "endDateTime");
+        if (Date.parse(start) >= Date.parse(end))
+          throw new Error("endDateTime must be after startDateTime");
+        const timeZone = readString(args, "timeZone") ?? ownerTimeZone;
+        const select =
+          "id,subject,start,end,organizer,attendees,location,bodyPreview,webLink,isAllDay,isCancelled,responseStatus,type";
+        const query = new URLSearchParams({
+          startDateTime: start,
+          endDateTime: end,
+          $select: select,
+          $top: "50",
+        });
+        const page = await graphPaged<GraphEvent>({
+          token,
+          path: `/users/${encodeURIComponent(mailbox)}/calendarView?${query.toString()}`,
+          headers: { Prefer: `outlook.timezone=\"${timeZone.replaceAll('"', "")}\"` },
+          maxPages: readNumber(args, "maxPages", 10),
+        });
+        return jsonResult(
+          envelope({
+            owner: mailbox,
+            query: { startDateTime: start, endDateTime: end },
+            range: { start, end },
+            items: page.items,
+            timeZone,
+            pagesRead: page.pagesRead,
+            coverageComplete: page.coverageComplete,
+            warnings: page.warnings,
+          }),
+        );
+      },
+    },
+    {
+      name: "m365_calendar_search",
+      label: "Search calendar",
+      description:
+        "Search complete calendar instances in an exact range by subject, organizer, or attendee.",
+      parameters: objectSchema(
+        {
+          startDateTime: stringSchema({ minLength: 1 }),
+          endDateTime: stringSchema({ minLength: 1 }),
+          timeZone: stringSchema(),
+          text: stringSchema(),
+          person: stringSchema(),
+          maxPages: numberSchema({ minimum: 1, maximum: 20, default: 10 }),
+        },
+        ["startDateTime", "endDateTime"],
+      ),
+      async execute(_toolCallId, params) {
+        const args = readRecord(params);
+        const { token, mailbox, timeZone: ownerTimeZone } = await graphToken(ctx);
+        const start = requireDateTime(readString(args, "startDateTime"), "startDateTime");
+        const end = requireDateTime(readString(args, "endDateTime"), "endDateTime");
+        const timeZone = readString(args, "timeZone") ?? ownerTimeZone;
+        const query = new URLSearchParams({ startDateTime: start, endDateTime: end, $top: "50" });
+        const page = await graphPaged<GraphEvent>({
+          token,
+          path: `/users/${encodeURIComponent(mailbox)}/calendarView?${query.toString()}`,
+          headers: { Prefer: `outlook.timezone=\"${timeZone.replaceAll('"', "")}\"` },
+          maxPages: readNumber(args, "maxPages", 10),
+        });
+        const text = readString(args, "text")?.toLowerCase();
+        const person = readString(args, "person")?.toLowerCase();
+        const items = page.items.filter((event) => {
+          const textMatch =
+            !text ||
+            event.subject?.toLowerCase().includes(text) ||
+            event.bodyPreview?.toLowerCase().includes(text);
+          const people = [
+            event.organizer?.emailAddress?.name,
+            event.organizer?.emailAddress?.address,
+            ...(event.attendees ?? []).flatMap((a) => [
+              a.emailAddress?.name,
+              a.emailAddress?.address,
+            ]),
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return textMatch && (!person || people.includes(person));
+        });
+        return jsonResult(
+          envelope({
+            owner: mailbox,
+            query: { text, person },
+            range: { start, end },
+            items,
+            timeZone,
+            pagesRead: page.pagesRead,
+            coverageComplete: page.coverageComplete,
+            warnings: page.warnings,
+          }),
+        );
+      },
+    },
+    {
+      name: "m365_calendar_event_read",
+      label: "Read calendar event",
+      description: "Read one calendar event returned by an owner-scoped calendar tool.",
+      parameters: objectSchema(
+        { eventId: stringSchema({ minLength: 1 }), timeZone: stringSchema() },
+        ["eventId"],
+      ),
+      async execute(_toolCallId, params) {
+        const args = readRecord(params);
+        const eventId = readString(args, "eventId");
+        if (!eventId) throw new Error("eventId required");
+        const { token, mailbox, timeZone: ownerTimeZone } = await graphToken(ctx);
+        const timeZone = readString(args, "timeZone") ?? ownerTimeZone;
+        const event = await graphJson<GraphEvent>({
+          token,
+          path: `/users/${encodeURIComponent(mailbox)}/events/${encodeURIComponent(eventId)}`,
+          headers: { Prefer: `outlook.timezone=\"${timeZone.replaceAll('"', "")}\"` },
+        });
+        return jsonResult(
+          envelope({ owner: mailbox, query: { eventId }, items: [event], timeZone }),
+        );
+      },
+    },
+    {
       name: "m365_calendar_list",
       label: "List calendar",
       description:
@@ -400,7 +703,11 @@ function createTools(ctx: OpenClawPluginToolContext): AnyAgentTool[] {
           `start/dateTime ge '${now}'`,
         )}&$select=${encodeURIComponent(select)}`;
         const data = await graphJson<GraphPaged<GraphEvent>>({ token, path });
-        return jsonResult({ mailbox, events: data.value ?? [] });
+        return jsonResult({
+          mailbox,
+          events: data.value ?? [],
+          warning: "Compatibility tool: use m365_calendar_view for bounded time questions.",
+        });
       },
     },
     {

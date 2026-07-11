@@ -7,8 +7,12 @@
   },
   "contracts": {
     "tools": [
+      "m365_mail_search",
       "m365_mail_list_recent",
       "m365_mail_read",
+      "m365_calendar_view",
+      "m365_calendar_search",
+      "m365_calendar_event_read",
       "m365_mail_draft_reply",
       "m365_mail_send",
       "m365_calendar_list",
@@ -58,6 +62,16 @@
             "allowWrites": {
               "type": "boolean",
               "default": false
+            },
+            "timeZone": {
+              "type": "string",
+              "default": "UTC",
+              "description": "Canonical IANA timezone for natural-language date ranges and Graph response rendering."
+            },
+            "weekStartsOn": {
+              "type": "string",
+              "enum": ["monday", "sunday"],
+              "default": "monday"
             }
           }
         }

@@ -4,8 +4,12 @@ import { describe, expect, it } from "vitest";
 import m365Plugin from "./index.js";
 
 const EXPECTED_TOOLS = [
+  "m365_mail_search",
   "m365_mail_list_recent",
   "m365_mail_read",
+  "m365_calendar_view",
+  "m365_calendar_search",
+  "m365_calendar_event_read",
   "m365_calendar_list",
   "m365_mail_draft_reply",
   "m365_mail_send",
