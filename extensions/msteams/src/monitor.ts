@@ -318,7 +318,7 @@ export async function monitorMSTeamsProvider(
   registerMSTeamsHandlers(handler, handlerDeps);
 
   const ingress = createMSTeamsIngress({
-    accountId: appId,
+    accountId,
     runtime,
     dispatch: async (activity, lifecycle, liveContext) => {
       // The journaled activity is the dispatch payload; the live context only
