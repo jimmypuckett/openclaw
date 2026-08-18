@@ -1014,7 +1014,12 @@ async function initSessionStateAttemptLocked(
         warn: (message) => log.warn(message),
       });
     },
-    ...(previousSessionEntry ? { resetBoundaryReason: resetReason } : {}),
+    ...(previousSessionEntry
+      ? {
+          resetBoundaryContext: resetTriggered ? ("fresh" as const) : ("recent" as const),
+          resetBoundaryReason: resetReason,
+        }
+      : {}),
     beforeEntryMutation: ({ currentEntry, sessionEntry: entryToCommit }) => {
       if (!previousSessionEntry || !currentEntry) {
         return;

@@ -139,6 +139,7 @@ export async function commitReplySessionInitialization(params: {
   prepareSessionEntry?: (
     context: ReplySessionInitializationCommitContext,
   ) => Promise<SessionEntry> | SessionEntry;
+  resetBoundaryContext?: import("./session-reset-boundary-event.js").SessionResetBoundaryContext;
   resetBoundaryReason?: import("./session-reset-boundary-event.js").SessionResetBoundaryReason;
   previousEntry?: SessionEntry;
   retiredEntry?: SessionEntryRetirement;
@@ -201,6 +202,7 @@ export async function commitReplySessionInitialization(params: {
   const upserts: SessionEntryLifecycleUpsert[] = [
     {
       sessionKey: resolved.normalizedKey,
+      ...(params.resetBoundaryContext ? { resetBoundaryContext: params.resetBoundaryContext } : {}),
       ...(params.resetBoundaryReason ? { resetBoundaryReason: params.resetBoundaryReason } : {}),
       buildEntry: async ({ store: currentStore }) => {
         const commitResolved = resolveSessionEntryFromStore({

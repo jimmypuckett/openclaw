@@ -1,6 +1,9 @@
 import type { OpenClawConfig } from "../types.openclaw.js";
 import type { SessionUnreferencedArtifactSweepResult } from "./disk-budget.js";
-import type { SessionResetBoundaryReason } from "./session-reset-boundary-event.js";
+import type {
+  SessionResetBoundaryContext,
+  SessionResetBoundaryReason,
+} from "./session-reset-boundary-event.js";
 import type { SessionMaintenanceApplyReport } from "./store-maintenance-operations.js";
 import type { SessionEntry } from "./types.js";
 
@@ -57,6 +60,7 @@ export type ResetSessionEntryLifecycleParams = {
     primaryKey: string;
   }) => Promise<SessionEntry> | SessionEntry;
   /** Atomically append this boundary with the reset entry mutation. */
+  resetBoundaryContext?: SessionResetBoundaryContext;
   resetBoundaryReason?: SessionResetBoundaryReason;
   /** Explicit store target for SQLite session ownership. */
   storePath: string;
@@ -127,6 +131,7 @@ export type SessionEntryLifecycleRemoval = SessionEntryLifecycleRemovalBase &
 
 export type SessionEntryLifecycleUpsert = {
   sessionKey: string;
+  resetBoundaryContext?: SessionResetBoundaryContext;
   resetBoundaryReason?: SessionResetBoundaryReason;
 } & (
   | {
