@@ -21,6 +21,33 @@ function message(params: {
 }
 
 describe("reset boundary planning", () => {
+  it("starts explicit reset boundaries without replaying prior context", async () => {
+    const user = message({
+      id: "prior-user",
+      parentId: null,
+      role: "user",
+      content: "prior question",
+      second: 1,
+    });
+    const assistant = message({
+      id: "prior-assistant",
+      parentId: user.id,
+      role: "assistant",
+      content: "prior answer",
+      second: 2,
+    });
+
+    const plan = await buildSessionResetBoundaryPlan({
+      context: "fresh",
+      events: [user, assistant],
+      reason: "new",
+    });
+
+    expect(plan.seedEvents).toEqual([]);
+    expect(plan.event).toMatchObject({ parentId: assistant.id, reason: "new" });
+    expect(plan.event).not.toHaveProperty("firstKeptEntryId");
+  });
+
   it("selects repeated reset tails from the current logical window", async () => {
     const oldUser = message({
       id: "old-user",
@@ -62,6 +89,7 @@ describe("reset boundary planning", () => {
     expect(
       (
         await buildSessionResetBoundaryPlan({
+          context: "recent",
           events: [oldUser, oldAssistant, keptUser, keptAssistant, firstReset],
           reason: "reset",
         })
@@ -107,6 +135,7 @@ describe("reset boundary planning", () => {
     expect(
       (
         await buildSessionResetBoundaryPlan({
+          context: "recent",
           events: [discarded, keptUser, keptAssistant, compaction],
           reason: "new",
         })
@@ -135,6 +164,7 @@ describe("reset boundary planning", () => {
       );
 
       const plan = await buildSessionResetBoundaryPlan({
+        context: "recent",
         events: [],
         legacySessionFile: sessionFile,
         reason: "new",
@@ -147,12 +177,22 @@ describe("reset boundary planning", () => {
       expect(plan.event.firstKeptEntryId).toBe("message-14");
 
       const metadataOnlyPlan = await buildSessionResetBoundaryPlan({
+        context: "recent",
         events: [{ type: "model_change", id: "metadata-only", parentId: null }],
         legacySessionFile: sessionFile,
         reason: "new",
       });
       expect(metadataOnlyPlan.seedEvents).toHaveLength(6);
       expect(metadataOnlyPlan.event.firstKeptEntryId).toBe("message-14");
+
+      const freshPlan = await buildSessionResetBoundaryPlan({
+        context: "fresh",
+        events: [],
+        legacySessionFile: sessionFile,
+        reason: "new",
+      });
+      expect(freshPlan.seedEvents).toEqual([]);
+      expect(freshPlan.event).not.toHaveProperty("firstKeptEntryId");
     });
   });
 
@@ -210,6 +250,7 @@ describe("reset boundary planning", () => {
       );
 
       const plan = await buildSessionResetBoundaryPlan({
+        context: "recent",
         events: [],
         legacySessionFile: sessionFile,
         reason: "reset",

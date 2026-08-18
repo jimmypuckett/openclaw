@@ -15,6 +15,7 @@ import {
   appendTranscriptEvent,
   loadSessionEntry,
   loadTranscriptEvents,
+  readSessionTranscriptMessageEvents,
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
 import { runExclusiveSessionStoreWrite } from "../../config/sessions/store-writer.js";
@@ -3605,62 +3606,80 @@ describe("initSessionState preserves behavior overrides across /new and /reset",
     expect(result.isNewSession).toBe(false);
     expect(result.sessionId).toBe(existingSessionId);
   });
-  it("retains the transcript in place on /new", async () => {
-    const storePath = await createStorePath("openclaw-archive-old-");
-    const sessionKey = "agent:main:telegram:dm:user-archive";
-    const existingSessionId = "existing-session-archive";
-    await seedSessionStoreWithOverrides({
-      storePath,
-      sessionKey,
-      sessionId: existingSessionId,
-      overrides: { verboseLevel: "on" },
-    });
-    await appendTranscriptMessage(
-      { agentId: "main", sessionId: existingSessionId, sessionKey, storePath },
-      { message: { role: "user", content: "kept question" } },
-    );
-    await appendTranscriptMessage(
-      { agentId: "main", sessionId: existingSessionId, sessionKey, storePath },
-      { message: { role: "assistant", content: "kept answer" } },
-    );
+  it.each([
+    { command: "/new", reason: "new" },
+    { command: "/reset", reason: "reset" },
+  ] as const)(
+    "retains transcript history but starts $command with clean visible context",
+    async ({ command, reason }) => {
+      const slug = command.slice(1);
+      const storePath = await createStorePath(`openclaw-explicit-${slug}-`);
+      const sessionKey = `agent:main:telegram:dm:user-explicit-${slug}`;
+      const existingSessionId = `existing-session-explicit-${slug}`;
+      await seedSessionStoreWithOverrides({
+        storePath,
+        sessionKey,
+        sessionId: existingSessionId,
+        overrides: { verboseLevel: "on" },
+      });
+      await appendTranscriptMessage(
+        { agentId: "main", sessionId: existingSessionId, sessionKey, storePath },
+        { message: { role: "user", content: "kept question" } },
+      );
+      await appendTranscriptMessage(
+        { agentId: "main", sessionId: existingSessionId, sessionKey, storePath },
+        { message: { role: "assistant", content: "kept answer" } },
+      );
 
-    const cfg = {
-      session: { store: storePath, idleMinutes: 999 },
-    } as OpenClawConfig;
+      const cfg = {
+        session: { store: storePath, idleMinutes: 999 },
+      } as OpenClawConfig;
 
-    const result = await initSessionState({
-      ctx: {
-        Body: "/new",
-        RawBody: "/new",
-        CommandBody: "/new",
-        From: "user-archive",
-        To: "bot",
-        ChatType: "direct",
-        SessionKey: sessionKey,
-        Provider: "telegram",
-        Surface: "telegram",
-      },
-      cfg,
-    });
+      const result = await initSessionState({
+        ctx: {
+          Body: command,
+          RawBody: command,
+          CommandBody: command,
+          From: `user-explicit-${slug}`,
+          To: "bot",
+          ChatType: "direct",
+          SessionKey: sessionKey,
+          Provider: "telegram",
+          Surface: "telegram",
+        },
+        cfg,
+      });
 
-    expect(result.isNewSession).toBe(true);
-    expect(result.resetTriggered).toBe(true);
-    expect(result.sessionId).toBe(existingSessionId);
-    const events = await loadTranscriptEvents({
-      agentId: "main",
-      sessionId: existingSessionId,
-      sessionKey,
-      storePath,
-    });
-    expect(events.map((event) => (event as { type?: unknown }).type)).toContain("reset");
-    expect(
-      events.findLast((event) => (event as { type?: unknown }).type === "reset"),
-    ).toMatchObject({ reason: "new", firstKeptEntryId: expect.any(String) });
-    const archived = (await fs.readdir(path.dirname(storePath))).filter((entry) =>
-      entry.startsWith(`${existingSessionId}.jsonl.reset.`),
-    );
-    expect(archived).toHaveLength(0);
-  });
+      expect(result.isNewSession).toBe(true);
+      expect(result.resetTriggered).toBe(true);
+      expect(result.sessionId).toBe(existingSessionId);
+      const events = await loadTranscriptEvents({
+        agentId: "main",
+        sessionId: existingSessionId,
+        sessionKey,
+        storePath,
+      });
+      expect(events.map((event) => (event as { type?: unknown }).type)).toContain("reset");
+      expect(
+        events.findLast((event) => (event as { type?: unknown }).type === "reset"),
+      ).toMatchObject({ reason });
+      expect(
+        events.findLast((event) => (event as { type?: unknown }).type === "reset"),
+      ).not.toHaveProperty("firstKeptEntryId");
+      expect(
+        readSessionTranscriptMessageEvents({
+          agentId: "main",
+          sessionId: existingSessionId,
+          sessionKey,
+          storePath,
+        }),
+      ).toEqual([]);
+      const archived = (await fs.readdir(path.dirname(storePath))).filter((entry) =>
+        entry.startsWith(`${existingSessionId}.jsonl.reset.`),
+      );
+      expect(archived).toHaveLength(0);
+    },
+  );
 
   it("drains foreign work before appending a reply reset boundary", async () => {
     const storePath = await createStorePath("openclaw-rollover-admission-");

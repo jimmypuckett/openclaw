@@ -9,6 +9,7 @@ import { streamSessionTranscriptLinesReverse } from "./transcript-stream.js";
 import { selectSessionTranscriptLeafControlledPath } from "./transcript-tree.js";
 
 export type SessionResetBoundaryReason = "new" | "reset" | "idle" | "daily" | "cron-stale";
+export type SessionResetBoundaryContext = "fresh" | "recent";
 
 type SessionResetBoundaryEvent = {
   type: "reset";
@@ -74,6 +75,7 @@ function projectLatestBoundaryWindow(entries: readonly unknown[]): unknown[] {
 }
 
 function buildSessionResetBoundaryEvent(params: {
+  context: SessionResetBoundaryContext;
   events: readonly unknown[];
   reason: SessionResetBoundaryReason;
 }): SessionResetBoundaryEvent {
@@ -85,9 +87,10 @@ function buildSessionResetBoundaryEvent(params: {
       (event as { type?: unknown }).type !== "session",
   );
   const activeEntries = selectSessionTranscriptLeafControlledPath(entries) ?? entries;
-  const keptEntries = selectRecentUserAssistantReplayRecords(
-    projectLatestBoundaryWindow(activeEntries),
-  );
+  const keptEntries =
+    params.context === "recent"
+      ? selectRecentUserAssistantReplayRecords(projectLatestBoundaryWindow(activeEntries))
+      : [];
   const firstKeptEntryId = recordId(keptEntries[0]);
   return {
     type: "reset",
@@ -154,6 +157,7 @@ async function readLegacyTranscriptEvents(sessionFile: string | undefined): Prom
 }
 
 export async function buildSessionResetBoundaryPlan(params: {
+  context: SessionResetBoundaryContext;
   events: readonly unknown[];
   legacySessionFile?: string;
   reason: SessionResetBoundaryReason;
@@ -165,9 +169,10 @@ export async function buildSessionResetBoundaryPlan(params: {
         : undefined;
     return type === "message" || type === "compaction" || type === "reset";
   });
-  const legacyEvents = hasConversationEvents
-    ? []
-    : await readLegacyTranscriptEvents(params.legacySessionFile);
+  const legacyEvents =
+    hasConversationEvents || params.context === "fresh"
+      ? []
+      : await readLegacyTranscriptEvents(params.legacySessionFile);
   const seedEvents = legacyEvents.filter(
     (event) =>
       event !== null &&
@@ -177,7 +182,11 @@ export async function buildSessionResetBoundaryPlan(params: {
   );
   const events = seedEvents.length > 0 ? [...params.events, ...seedEvents] : params.events;
   return {
-    event: buildSessionResetBoundaryEvent({ events, reason: params.reason }),
+    event: buildSessionResetBoundaryEvent({
+      context: params.context,
+      events,
+      reason: params.reason,
+    }),
     seedEvents,
   };
 }

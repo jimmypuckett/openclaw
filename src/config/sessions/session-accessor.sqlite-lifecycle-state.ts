@@ -377,6 +377,7 @@ export async function projectSessionEntryLifecycleMutation(
     const resetBoundaryPlan =
       upsert.resetBoundaryReason && expectedEntry?.sessionId
         ? await buildSessionResetBoundaryPlan({
+            context: upsert.resetBoundaryContext ?? "recent",
             events: loadTranscriptEventsFromDatabase(database, expectedEntry.sessionId),
             reason: upsert.resetBoundaryReason,
           })
