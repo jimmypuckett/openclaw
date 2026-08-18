@@ -192,19 +192,39 @@ export async function runBeforeToolCallHook(args: {
       ...(args.toolKind && { toolKind: args.toolKind }),
       ...(args.toolInputKind && { toolInputKind: args.toolInputKind }),
     };
-    const buildToolContext = (identity: typeof toolIdentity) => ({
-      toolName,
-      ...identity,
-      ...(args.ctx?.agentId && { agentId: args.ctx.agentId }),
-      ...(args.ctx?.sessionKey && { sessionKey: args.ctx.sessionKey }),
-      ...(args.ctx?.sessionId && { sessionId: args.ctx.sessionId }),
-      ...(args.ctx?.runId && { runId: args.ctx.runId }),
-      ...(args.signal ? { abortSignal: args.signal } : {}),
-      ...(args.ctx?.trace && { trace: freezeDiagnosticTraceContext(args.ctx.trace) }),
-      ...(args.toolCallId && { toolCallId: args.toolCallId }),
-      ...(args.ctx?.channelId && { channelId: args.ctx.channelId }),
-      ...(args.ctx?.requester ? { requester: args.ctx.requester } : {}),
-    });
+    const buildToolContext = (identity: typeof toolIdentity) => {
+      const scheduledToolPolicy = args.ctx?.scheduledToolPolicy;
+      const publicScheduledToolPolicy = scheduledToolPolicy
+        ? Object.freeze(
+            scheduledToolPolicy.mode === "account"
+              ? {
+                  version: scheduledToolPolicy.version,
+                  mode: scheduledToolPolicy.mode,
+                  ownerSessionKey: scheduledToolPolicy.ownerSessionKey,
+                  ownerAccountId: scheduledToolPolicy.ownerAccountId,
+                }
+              : {
+                  version: scheduledToolPolicy.version,
+                  mode: scheduledToolPolicy.mode,
+                },
+          )
+        : undefined;
+      return {
+        toolName,
+        ...identity,
+        ...(args.ctx?.agentId && { agentId: args.ctx.agentId }),
+        ...(args.ctx?.sessionKey && { sessionKey: args.ctx.sessionKey }),
+        ...(args.ctx?.sessionId && { sessionId: args.ctx.sessionId }),
+        ...(args.ctx?.runId && { runId: args.ctx.runId }),
+        ...(args.ctx?.trigger && { trigger: args.ctx.trigger }),
+        ...(publicScheduledToolPolicy ? { scheduledToolPolicy: publicScheduledToolPolicy } : {}),
+        ...(args.signal ? { abortSignal: args.signal } : {}),
+        ...(args.ctx?.trace && { trace: freezeDiagnosticTraceContext(args.ctx.trace) }),
+        ...(args.toolCallId && { toolCallId: args.toolCallId }),
+        ...(args.ctx?.channelId && { channelId: args.ctx.channelId }),
+        ...(args.ctx?.requester ? { requester: args.ctx.requester } : {}),
+      };
+    };
     const toolContext = buildToolContext(toolIdentity);
     const trustedPolicyResult = shouldRunTrustedPolicies
       ? await runTrustedToolPolicies(

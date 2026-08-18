@@ -327,7 +327,8 @@ provider payloads, start the Gateway with `--raw-stream` and
 - optional `event.runId`
 - optional `event.toolCallId`
 - context fields such as `ctx.agentId`, `ctx.sessionKey`, `ctx.sessionId`,
-  `ctx.runId`, `ctx.toolKind`, `ctx.toolInputKind`, and diagnostic `ctx.trace`
+  `ctx.runId`, `ctx.trigger`, `ctx.toolKind`, `ctx.toolInputKind`, and diagnostic
+  `ctx.trace`
 - optional `ctx.abortSignal`, which aborts when the owning tool call is
   cancelled; handlers should pass it to cancellable I/O and remove any
   listeners they register
@@ -335,6 +336,10 @@ provider payloads, start the Gateway with `--raw-stream` and
   message run. It can include `channel`, `accountId`, `senderId`,
   `senderIsOwner`, and provider-native `roleIds`. Missing fields are unproven,
   not false assurances; fail closed when policy requires them.
+- optional `ctx.scheduledToolPolicy`, present only for a scheduled run carrying
+  a server-stamped explicit tool cap. Account-scoped policies include the owner
+  session and account; trusted operator policies expose only `version` and
+  `mode`. Treat absence as unproven scheduled authority.
 
 It can return:
 

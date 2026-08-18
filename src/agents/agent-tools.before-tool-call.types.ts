@@ -15,6 +15,7 @@ import type {
 import type { SkillSnapshot, SkillTelemetrySource, SkillUsagePath } from "../skills/types.js";
 import type { AgentTool } from "./runtime/index.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import type { ScheduledToolPolicyContext } from "./scheduled-tool-policy.js";
 
 export type ToolOutcomeObservation = {
   toolName: string;
@@ -42,6 +43,8 @@ export type HookContext = {
   runId?: string;
   /** What initiated this run, used to reject approvals on unattended surfaces. */
   trigger?: string;
+  /** Trusted server-stamped authority for an explicitly capped scheduled run. */
+  scheduledToolPolicy?: ScheduledToolPolicyContext;
   /** Device-scoped operator session allowed to review approvals initiated by this run. */
   approvalReviewerDeviceId?: string;
   trace?: DiagnosticTraceContext;
