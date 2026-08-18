@@ -953,6 +953,7 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
     sessionId: options?.sessionId,
     runId: options?.runId,
     trigger: options?.trigger,
+    scheduledToolPolicy: options?.scheduledToolPolicy,
     approvalReviewerDeviceId: options?.approvalReviewerDeviceId,
     channelId: options?.hookChannelId ?? options?.currentChannelId,
     ...(hasRequester ? { requester } : {}),

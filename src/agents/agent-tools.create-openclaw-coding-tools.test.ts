@@ -299,6 +299,47 @@ describe("createOpenClawCodingTools", () => {
     );
   });
 
+  it("passes server-stamped scheduled authority to wrapped tool hooks", async () => {
+    const beforeToolCall = vi.fn();
+    initializeGlobalHookRunner(
+      createMockPluginRegistry([{ hookName: "before_tool_call", handler: beforeToolCall }]),
+    );
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-hook-scheduled-"));
+    await fs.writeFile(path.join(tmpDir, "note.txt"), "hello");
+    const scheduledToolPolicy = {
+      version: 1 as const,
+      mode: "account" as const,
+      ownerSessionKey: "agent:main:main",
+      ownerAccountId: "operations",
+      ownerOrigin: {
+        kind: "external" as const,
+        channel: "msteams",
+        accountId: "operations",
+        senderId: "private-owner-id",
+      },
+    };
+    const tools = createOpenClawCodingTools({
+      workspaceDir: tmpDir,
+      trigger: "cron",
+      scheduledToolPolicy,
+    });
+    const readTool = requireTool(tools, "read");
+    await requireToolExecute(readTool)("tool-hook-scheduled", { path: "note.txt" });
+
+    expect(beforeToolCall).toHaveBeenCalledTimes(1);
+    expect(beforeToolCall.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        trigger: "cron",
+        scheduledToolPolicy: {
+          version: 1,
+          mode: "account",
+          ownerSessionKey: "agent:main:main",
+          ownerAccountId: "operations",
+        },
+      }),
+    );
+  });
+
   it("binds configured MCP cron authority only to the exact admitted run", async () => {
     const resolve = vi.fn().mockResolvedValue({
       tools: ["read", { name: "mcp_todoist_add_task", pluginId: "todoist" }],

@@ -690,11 +690,28 @@ export type PluginHookToolRequesterContext = {
   readonly roleIds?: readonly string[];
 };
 
+/** Server-stamped authority for a scheduled run with an explicit tool cap. */
+export type PluginHookScheduledToolPolicyContext =
+  | {
+      readonly version: 1;
+      readonly mode: "trusted";
+    }
+  | {
+      readonly version: 1;
+      readonly mode: "account";
+      readonly ownerSessionKey: string;
+      readonly ownerAccountId: string;
+    };
+
 export type PluginHookToolContext = {
   agentId?: string;
   sessionKey?: string;
   sessionId?: string;
   runId?: string;
+  /** Host-authoritative run trigger such as `user`, `cron`, or `heartbeat`. */
+  trigger?: string;
+  /** Present only for a server-stamped scheduled run with an explicit tool cap. */
+  scheduledToolPolicy?: PluginHookScheduledToolPolicyContext;
   /** Aborts when the owning tool call is cancelled. Hook timeout expiry does not abort this signal. */
   abortSignal?: AbortSignal;
   trace?: DiagnosticTraceContext;
