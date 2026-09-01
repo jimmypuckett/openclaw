@@ -1088,6 +1088,7 @@ export const msteamsPlugin: ChannelPlugin<ResolvedMSTeamsAccount, ProbeMSTeamsRe
           }
           return monitorMSTeamsProvider({
             cfg: ctx.cfg,
+            accountId: ctx.accountId,
             runtime: ctx.runtime,
             abortSignal: ctx.abortSignal,
             statusSink,

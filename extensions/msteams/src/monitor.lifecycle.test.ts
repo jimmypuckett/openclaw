@@ -87,10 +87,8 @@ const loadMSTeamsSdkWithAuth = vi.hoisted(() =>
   }),
 );
 
-const ssoTokenStore = vi.hoisted(() => ({
-  get: vi.fn(async () => null),
-  save: vi.fn(async () => {}),
-  remove: vi.fn(async () => false),
+const runtimeContexts = vi.hoisted(() => ({
+  register: vi.fn(() => ({ dispose: vi.fn() })),
 }));
 
 vi.mock("@microsoft/teams.apps", () => ({
@@ -152,12 +150,9 @@ vi.mock("./runtime.js", () => ({
       text: {
         resolveTextChunkLimit: () => 4000,
       },
+      runtimeContexts,
     },
   }),
-}));
-
-vi.mock("./sso-token-store.js", () => ({
-  createMSTeamsSsoTokenStoreFs: () => ssoTokenStore,
 }));
 
 import { monitorMSTeamsProvider } from "./monitor.js";
@@ -262,9 +257,7 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     isCardActionInvokeAuthorized.mockReset().mockResolvedValue(true);
     runMSTeamsFileConsentInvokeHandler.mockReset().mockResolvedValue(undefined);
     getMSTeamsIngressMockState().instances.length = 0;
-    ssoTokenStore.get.mockClear();
-    ssoTokenStore.save.mockClear();
-    ssoTokenStore.remove.mockClear();
+    runtimeContexts.register.mockClear();
   });
 
   it("stays active until aborted", async () => {
@@ -463,7 +456,7 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     await task;
   });
 
-  it("gates SDK SSO invoke routes and persists successful signin events", async () => {
+  it("gates SDK SSO invoke routes and registers an in-memory turn authority", async () => {
     const abort = new AbortController();
     const cfg = createConfig(0);
     updateMSTeamsConfig(cfg, {
@@ -494,7 +487,14 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     const app = sdkResult.app;
     expect(app.on).toHaveBeenCalledWith("signin.token-exchange", expect.any(Function));
     expect(app.on).toHaveBeenCalledWith("signin.verify-state", expect.any(Function));
-    expect(app.event).toHaveBeenCalledWith("signin", expect.any(Function));
+    expect(app.event).not.toHaveBeenCalled();
+    expect(runtimeContexts.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channelId: "msteams",
+        accountId: "app-id",
+        capability: "msteams.sso.turn-authority.v1",
+      }),
+    );
 
     const tokenExchangeHandler = app.on.mock.calls.find(
       (call: [string, unknown]) => call[0] === "signin.token-exchange",
@@ -508,94 +508,6 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     });
     expect(exchangeResult).toEqual({ status: 200 });
     expect(app.onTokenExchange).toHaveBeenCalledTimes(1);
-
-    const signinHandler = app.event.mock.calls.find(
-      (call: [string, unknown]) => call[0] === "signin",
-    )?.[1];
-    expect(typeof signinHandler).toBe("function");
-    if (typeof signinHandler !== "function") {
-      throw new Error("expected signin event handler");
-    }
-
-    signinHandler({
-      activity: { from: { id: "29:user", aadObjectId: "aad-user" } },
-      token: {
-        connectionName: "graph",
-        token: "delegated-graph-token",
-        expiration: "2030-01-01T00:00:00Z",
-      },
-    });
-
-    await waitForMSTeamsTestState(() => {
-      expect(isSigninInvokeAuthorized).toHaveBeenCalledTimes(2);
-      expect(ssoTokenStore.save).toHaveBeenCalledTimes(2);
-    });
-    expect(ssoTokenStore.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        connectionName: "graph",
-        userId: "29:user",
-        token: "delegated-graph-token",
-        expiresAt: "2030-01-01T00:00:00Z",
-      }),
-    );
-    expect(ssoTokenStore.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        connectionName: "graph",
-        userId: "aad-user",
-        token: "delegated-graph-token",
-        expiresAt: "2030-01-01T00:00:00Z",
-      }),
-    );
-
-    abort.abort();
-    await task;
-  });
-
-  it("does not persist SDK SSO signin events when Teams sender policy denies them", async () => {
-    const abort = new AbortController();
-    const cfg = createConfig(0);
-    updateMSTeamsConfig(cfg, {
-      sso: { enabled: true, connectionName: "graph" },
-    });
-    isSigninInvokeAuthorized.mockResolvedValueOnce(false);
-
-    const task = monitorMSTeamsProvider({
-      cfg,
-      runtime: createRuntime(),
-      abortSignal: abort.signal,
-      conversationStore: createStores().conversationStore,
-      pollStore: createStores().pollStore,
-    });
-
-    await waitForMSTeamsTestState(() => {
-      expect(registerMSTeamsHandlers).toHaveBeenCalled();
-    });
-
-    const sdkResultPromise = loadMSTeamsSdkWithAuth.mock.results[0]?.value;
-    if (!sdkResultPromise) {
-      throw new Error("expected loadMSTeamsSdkWithAuth result");
-    }
-    const app = (await sdkResultPromise).app;
-    const signinHandler = app.event.mock.calls.find(
-      (call: [string, unknown]) => call[0] === "signin",
-    )?.[1];
-    if (typeof signinHandler !== "function") {
-      throw new Error("expected signin event handler");
-    }
-
-    signinHandler({
-      activity: { from: { id: "29:user", aadObjectId: "aad-user" } },
-      token: {
-        connectionName: "graph",
-        token: "delegated-graph-token",
-        expiration: "2030-01-01T00:00:00Z",
-      },
-    });
-
-    await waitForMSTeamsTestState(() => {
-      expect(isSigninInvokeAuthorized).toHaveBeenCalledTimes(1);
-    });
-    expect(ssoTokenStore.save).not.toHaveBeenCalled();
 
     abort.abort();
     await task;
@@ -640,7 +552,7 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     expect(result).toEqual({ status: 200, body: {} });
     expect(isSigninInvokeAuthorized).toHaveBeenCalledTimes(1);
     expect(app.onTokenExchange).not.toHaveBeenCalled();
-    expect(ssoTokenStore.save).not.toHaveBeenCalled();
+    expect(app.event).not.toHaveBeenCalled();
 
     abort.abort();
     await task;

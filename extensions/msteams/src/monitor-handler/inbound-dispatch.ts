@@ -16,6 +16,10 @@ import { resolveMSTeamsAllowlistMatch, resolveMSTeamsReplyPolicy } from "../poli
 import { createMSTeamsReplyDispatcher } from "../reply-dispatcher.js";
 import { getMSTeamsRuntime } from "../runtime.js";
 import { recordMSTeamsSentMessage } from "../sent-message-cache.js";
+import {
+  MSTEAMS_SSO_TOOL_BINDING_KEY,
+  type MSTeamsSsoTurnAuthority,
+} from "../sso-turn-authority.js";
 import type { admitMSTeamsMessage } from "./access.js";
 import { resolveMSTeamsSenderAccess } from "./access.js";
 import type { prepareMSTeamsInboundContent } from "./inbound-content.js";
@@ -29,6 +33,7 @@ type MSTeamsInboundDispatchResult =
 export async function dispatchMSTeamsInboundTurn(params: {
   cfg: MSTeamsMessageHandlerDeps["cfg"];
   runtime: RuntimeEnv;
+  accountId: string;
   appId: string;
   app: MSTeamsMessageHandlerDeps["app"];
   tokenProvider: MSTeamsMessageHandlerDeps["tokenProvider"];
@@ -46,11 +51,14 @@ export async function dispatchMSTeamsInboundTurn(params: {
   mentionWasEffective: boolean;
   conversationHistories: Map<string, HistoryEntry[]>;
   historyLimit: number;
+  ssoTurnAuthority?: MSTeamsSsoTurnAuthority;
+  ssoConnectionName?: string;
 }): Promise<MSTeamsInboundDispatchResult> {
   const core = getMSTeamsRuntime();
   const {
     cfg,
     runtime,
+    accountId,
     appId,
     app,
     tokenProvider,
@@ -67,6 +75,8 @@ export async function dispatchMSTeamsInboundTurn(params: {
     contextVisibilityMode,
     conversationHistories,
     historyLimit,
+    ssoTurnAuthority,
+    ssoConnectionName,
   } = params;
   const { context, activity, rawBody, text, quoteInfo, conversationRef } = facts;
   const {
@@ -159,6 +169,32 @@ export async function dispatchMSTeamsInboundTurn(params: {
       inboundEventKind: "user_request",
     },
   });
+  const tenantId = activity.channelData?.tenant?.id ?? activity.conversation?.tenantId;
+  const ssoTurnBinding =
+    ssoTurnAuthority &&
+    ssoConnectionName &&
+    context.connectionName === ssoConnectionName &&
+    route.accountId === accountId &&
+    activity.id &&
+    tenantId &&
+    senderId !== "unknown"
+      ? ssoTurnAuthority.issue({
+          accountId: route.accountId,
+          agentId: route.agentId,
+          sessionKey: route.sessionKey,
+          senderId,
+          tenantId,
+          activityId: activity.id,
+          conversationId,
+          connectionName: ssoConnectionName,
+          ...(context.userToken ? { token: context.userToken } : {}),
+          ...(context.signin
+            ? {
+                requestSignIn: () => context.signin!({ connectionName: ssoConnectionName }),
+              }
+            : {}),
+        })
+      : undefined;
   const ctxPayload = core.channel.inbound.buildContext({
     channelIngress: boundIngress.channelIngress,
     channel: "msteams",
@@ -226,6 +262,13 @@ export async function dispatchMSTeamsInboundTurn(params: {
     extra: {
       GroupSubject: !isDirectMessage ? conversationType : undefined,
       ReplyToIsQuote: quoteInfo ? true : undefined,
+      ...(ssoTurnBinding
+        ? {
+            GatewayRunToolBindings: {
+              [MSTEAMS_SSO_TOOL_BINDING_KEY]: ssoTurnBinding,
+            },
+          }
+        : {}),
     },
   });
 

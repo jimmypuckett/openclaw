@@ -46,15 +46,6 @@ import {
   type StoredMSTeamsPoll,
   type StoredMSTeamsPollVoteBucket,
 } from "./src/polls.js";
-import {
-  isMSTeamsSsoStoreData,
-  makeMSTeamsSsoTokenStoreKey,
-  MSTEAMS_MAX_SSO_TOKENS,
-  MSTEAMS_SSO_TOKENS_LEGACY_FILENAME,
-  MSTEAMS_SSO_TOKENS_NAMESPACE,
-  normalizeMSTeamsSsoStoredToken,
-  type MSTeamsSsoStoredToken,
-} from "./src/sso-token-store.js";
 
 export { legacyConfigRules, normalizeCompatibilityConfig } from "./config-doctor-api.js";
 
@@ -457,66 +448,6 @@ export const stateMigrations: PluginDoctorStateMigration[] = [
           { store: pollStore, requiredKeys: requiredPollKeys },
           { store: voteBucketStore, requiredKeys: requiredVoteKeys },
         ],
-      });
-    },
-  },
-  {
-    id: "msteams-sso-tokens-json-to-plugin-state",
-    label: "Microsoft Teams SSO tokens",
-    async detectLegacyState(params) {
-      const filePath = resolveStateFilePath(params.stateDir, MSTEAMS_SSO_TOKENS_LEGACY_FILENAME);
-      const state = await readLegacyJsonFile(filePath, (value) =>
-        isMSTeamsSsoStoreData(value) ? value : null,
-      );
-      if (!state || Object.keys(state.tokens).length === 0) {
-        return null;
-      }
-      return {
-        preview: [
-          `- ${MSTEAMS_PLUGIN_ID} SSO tokens: ${Object.keys(state.tokens).length} entries -> plugin state (${MSTEAMS_SSO_TOKENS_NAMESPACE})`,
-        ],
-      };
-    },
-    async migrateLegacyState(params) {
-      const warnings: string[] = [];
-      const filePath = resolveStateFilePath(params.stateDir, MSTEAMS_SSO_TOKENS_LEGACY_FILENAME);
-      const state = await readLegacyJsonFile(filePath, (value) =>
-        isMSTeamsSsoStoreData(value) ? value : null,
-      );
-      if (!state) {
-        return { changes: [], warnings };
-      }
-      const store = params.context.openPluginStateKeyedStore<MSTeamsSsoStoredToken>({
-        namespace: MSTEAMS_SSO_TOKENS_NAMESPACE,
-        maxEntries: MSTEAMS_MAX_SSO_TOKENS,
-      });
-      const requiredKeys = new Set((await store.entries()).map((entry) => entry.key));
-      let imported = 0;
-      let skipped = 0;
-      for (const token of Object.values(state.tokens)) {
-        const normalized = normalizeMSTeamsSsoStoredToken(token);
-        if (!normalized) {
-          skipped++;
-          continue;
-        }
-        const key = makeMSTeamsSsoTokenStoreKey(normalized.connectionName, normalized.userId);
-        requiredKeys.add(key);
-        if (await store.registerIfAbsent(key, normalized)) {
-          imported++;
-        }
-      }
-      if (skipped > 0) {
-        warnings.push(
-          `Skipped ${skipped} malformed ${MSTEAMS_PLUGIN_ID} SSO token ${skipped === 1 ? "entry" : "entries"} during migration`,
-        );
-      }
-      return completeLegacyKeyedImport({
-        filePath,
-        label: `${MSTEAMS_PLUGIN_ID} SSO token`,
-        archiveLabel: `${MSTEAMS_PLUGIN_ID} SSO-token`,
-        imported,
-        warnings,
-        stores: [{ store, requiredKeys }],
       });
     },
   },

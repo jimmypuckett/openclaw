@@ -33,6 +33,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
   const {
     cfg,
     runtime,
+    accountId: configuredAccountId,
     appId,
     app,
     tokenProvider,
@@ -40,8 +41,11 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
     mediaMaxBytes,
     conversationStore,
     pollStore,
+    ssoTurnAuthority,
+    ssoConnectionName,
     log,
   } = deps;
+  const accountId = configuredAccountId?.trim() || appId;
   const core = getMSTeamsRuntime();
   const logVerboseMessage = (message: string) => {
     if (core.logging.shouldLogVerbose()) {
@@ -275,6 +279,7 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
     await dispatchMSTeamsInboundTurn({
       cfg,
       runtime,
+      accountId,
       appId,
       app,
       tokenProvider,
@@ -292,6 +297,8 @@ export function createMSTeamsMessageHandler(deps: MSTeamsMessageHandlerDeps) {
       mentionWasEffective: mentionDecision.effectiveWasMentioned,
       conversationHistories,
       historyLimit,
+      ssoTurnAuthority,
+      ssoConnectionName,
     });
   };
 

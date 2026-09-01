@@ -57,12 +57,16 @@ import {
   type MSTeamsApp,
   type MSTeamsCardActionResponse,
 } from "./sdk.js";
-import { createMSTeamsSsoTokenStoreFs } from "./sso-token-store.js";
+import {
+  createMSTeamsSsoTurnAuthority,
+  MSTEAMS_SSO_TURN_AUTHORITY_CAPABILITY,
+} from "./sso-turn-authority.js";
 import { resolveMSTeamsCredentials } from "./token.js";
 import { applyMSTeamsWebhookTimeouts } from "./webhook-timeouts.js";
 
 type MonitorMSTeamsOpts = {
   cfg: OpenClawConfig;
+  accountId?: string;
   runtime?: RuntimeEnv;
   abortSignal?: AbortSignal;
   conversationStore?: MSTeamsConversationStore;
@@ -95,6 +99,7 @@ export async function monitorMSTeamsProvider(
     return { app: null, shutdown: async () => {} };
   }
   const appId = creds.appId; // Extract for use in closures
+  const accountId = opts.accountId?.trim() || appId;
 
   const runtime: RuntimeEnv = opts.runtime ?? {
     log: console.log,
@@ -286,15 +291,19 @@ export async function monitorMSTeamsProvider(
   // Build a token provider adapter for Graph API operations
   const tokenProvider = createMSTeamsTokenProvider(app);
 
-  const ssoDeps = ssoConnectionName
-    ? {
-        tokenStore: createMSTeamsSsoTokenStoreFs(),
-        connectionName: ssoConnectionName,
-      }
+  const ssoTurnAuthority = ssoConnectionName ? createMSTeamsSsoTurnAuthority() : undefined;
+  const ssoRuntimeContextLease = ssoTurnAuthority
+    ? core.channel.runtimeContexts.register({
+        channelId: "msteams",
+        accountId,
+        capability: MSTEAMS_SSO_TURN_AUTHORITY_CAPABILITY,
+        context: ssoTurnAuthority,
+        abortSignal: opts.abortSignal,
+      })
     : undefined;
-  if (ssoDeps) {
+  if (ssoTurnAuthority) {
     log.debug?.("msteams sso enabled", {
-      connectionName: ssoDeps.connectionName,
+      connectionName: ssoConnectionName,
     });
   }
 
@@ -305,6 +314,7 @@ export async function monitorMSTeamsProvider(
   const handlerDeps: MSTeamsMessageHandlerDeps = {
     cfg,
     runtime,
+    accountId,
     appId,
     app,
     tokenProvider,
@@ -312,12 +322,14 @@ export async function monitorMSTeamsProvider(
     mediaMaxBytes,
     conversationStore,
     pollStore,
+    ssoTurnAuthority,
+    ssoConnectionName,
     log,
   };
   registerMSTeamsHandlers(handler, handlerDeps);
 
   const ingress = createMSTeamsIngress({
-    accountId: appId,
+    accountId,
     runtime,
     dispatch: async (activity, lifecycle, liveContext) => {
       // The journaled activity is the dispatch payload; the live context only
@@ -458,7 +470,7 @@ export async function monitorMSTeamsProvider(
     if (!(await isSigninInvokeAuthorized(adaptedCtx, handlerDeps))) {
       return { status: 200, body: {} };
     }
-    if (!ssoDeps) {
+    if (!ssoTurnAuthority) {
       log.debug?.("signin invoke received but msteams.sso is not configured", {
         name: adaptedCtx.activity?.name,
       });
@@ -481,60 +493,6 @@ export async function monitorMSTeamsProvider(
   // a user route with the same name intentionally replaces the SDK system route.
   app.on("signin.token-exchange", (ctx) => handleSdkSigninInvoke(ctx, "onTokenExchange"));
   app.on("signin.verify-state", (ctx) => handleSdkSigninInvoke(ctx, "onVerifyState"));
-
-  // The delegated SDK sign-in handlers emit `signin` only after a successful
-  // token exchange/lookup. Persist that token for later OpenClaw use.
-  if (ssoDeps) {
-    app.event("signin", (ctx) => {
-      void (async () => {
-        const adaptedCtx = adaptSdkContext(ctx, app);
-        if (!(await isSigninInvokeAuthorized(adaptedCtx, handlerDeps))) {
-          return;
-        }
-
-        const activity = ctx.activity as {
-          from?: { id?: string; aadObjectId?: string };
-        };
-        const userIds = Array.from(
-          new Set(
-            [activity.from?.id, activity.from?.aadObjectId].filter((id): id is string =>
-              Boolean(id),
-            ),
-          ),
-        );
-        const connectionName = ctx.token.connectionName || ssoDeps.connectionName;
-        if (!connectionName || !ctx.token.token || userIds.length === 0) {
-          log.warn?.("msteams sso signin event missing token metadata", {
-            hasConnectionName: Boolean(connectionName),
-            hasToken: Boolean(ctx.token.token),
-            hasUser: userIds.length > 0,
-          });
-          return;
-        }
-
-        await Promise.all(
-          userIds.map((userId) =>
-            ssoDeps.tokenStore.save({
-              connectionName,
-              userId,
-              token: ctx.token.token,
-              expiresAt: ctx.token.expiration,
-              updatedAt: new Date().toISOString(),
-            }),
-          ),
-        );
-        log.info("msteams sso token persisted", {
-          connectionName,
-          userIdCount: userIds.length,
-          hasExpiry: Boolean(ctx.token.expiration),
-        });
-      })().catch((err: unknown) => {
-        log.error("msteams sso token persistence failed", {
-          error: formatUnknownError(err),
-        });
-      });
-    });
-  }
 
   // Feedback (thumbs up/down) on AI-generated messages. Teams delivers this as
   // a generic `message/submitAction` invoke, so non-feedback submits must fall
@@ -607,6 +565,8 @@ export async function monitorMSTeamsProvider(
 
   const shutdown = async () => {
     log.info("shutting down msteams provider");
+    ssoRuntimeContextLease?.dispose();
+    ssoTurnAuthority?.dispose();
     await new Promise<void>((resolve) => {
       httpServer.close((err) => {
         if (err) {

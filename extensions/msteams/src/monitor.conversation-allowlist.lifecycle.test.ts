@@ -143,14 +143,10 @@ vi.mock("./runtime.js", () => ({
         debug: vi.fn(),
       }),
     },
-    channel: { text: { resolveTextChunkLimit: () => 4000 } },
-  }),
-}));
-vi.mock("./sso-token-store.js", () => ({
-  createMSTeamsSsoTokenStoreFs: () => ({
-    get: vi.fn(async () => null),
-    save: vi.fn(async () => {}),
-    remove: vi.fn(async () => false),
+    channel: {
+      text: { resolveTextChunkLimit: () => 4000 },
+      runtimeContexts: { register: vi.fn(() => ({ dispose: vi.fn() })) },
+    },
   }),
 }));
 
