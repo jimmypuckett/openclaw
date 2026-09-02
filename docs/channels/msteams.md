@@ -729,6 +729,7 @@ Key settings (see [/gateway/configuration](/gateway/configuration) for shared ch
 - `channels.msteams.appId`, `channels.msteams.appPassword`, `channels.msteams.tenantId`: bot credentials.
 - `channels.msteams.cloud`: Teams SDK cloud environment (`Public`, `USGov`, `USGovDoD`, or `China`; default `Public`). Set with `serviceUrl` for USGov/DoD SDK clouds; China uses the SDK preset and stored Azure China Bot Framework conversation references, with Graph-backed helpers disabled until Azure China Graph routing ships.
 - `channels.msteams.serviceUrl`: Bot Connector service URL boundary for SDK proactive operations. Public cloud uses the SDK default; set for GCC (`https://smba.infra.gcc.teams.microsoft.com/teams`), GCC High, or DoD. China accepts Azure China Bot Framework channel hosts when the stored conversation reference comes from Teams operated by 21Vianet.
+- `channels.msteams.webhook.host`: optional host or address for the webhook server to bind. Omit it to keep the Node.js default; use `127.0.0.1` when a local reverse proxy is the only intended ingress.
 - `channels.msteams.webhook.port` (default `3978`).
 - `channels.msteams.webhook.path` (default `/api/messages`).
 - `channels.msteams.dmPolicy`: `pairing | allowlist | open | disabled` (default `pairing`).

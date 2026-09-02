@@ -378,6 +378,12 @@ describe("msteamsPlugin", () => {
 });
 
 describe("msteams config schema", () => {
+  it("accepts a non-empty webhook host and rejects an empty host", () => {
+    expect(MSTeamsConfigSchema.safeParse({ webhook: { host: "127.0.0.1" } }).success).toBe(true);
+    expect(MSTeamsConfigSchema.safeParse({ webhook: { host: "" } }).success).toBe(false);
+    expect(MSTeamsConfigSchema.safeParse({ webhook: { host: "  " } }).success).toBe(false);
+  });
+
   it("defaults groupPolicy to allowlist", () => {
     const res = MSTeamsConfigSchema.safeParse({});
 

@@ -584,13 +584,17 @@ export async function monitorMSTeamsProvider(
 
   // Start listening and fail fast if bind/listen fails.
   // skipAuth is private-QA-only and must never expose an unauthenticated
-  // webhook beyond loopback. Production keeps Express' existing bind behavior.
+  // webhook beyond loopback. Production uses an explicitly configured host and
+  // otherwise preserves Express' existing bind behavior.
   const privateQaRuntime = resolveMSTeamsPrivateQaRuntime();
+  const configuredHost = msteamsCfg.webhook?.host;
   const httpServer = await new Promise<Server>((resolve, reject) => {
     const onListen = (err?: Error) => (err ? reject(err) : resolve(server));
     const server = privateQaRuntime
       ? expressApp.listen(port, privateQaRuntime.listenHost, onListen)
-      : expressApp.listen(port, onListen);
+      : configuredHost
+        ? expressApp.listen(port, configuredHost, onListen)
+        : expressApp.listen(port, onListen);
   }).catch(async (err: unknown) => {
     log.error("msteams server error", { error: formatUnknownError(err) });
     await ingress.stop();

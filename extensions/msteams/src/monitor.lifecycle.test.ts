@@ -267,11 +267,17 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     ssoTokenStore.remove.mockClear();
   });
 
-  it("stays active until aborted", async () => {
+  it("binds a configured webhook host and stays active until aborted", async () => {
     const abort = new AbortController();
     const stores = createStores();
+    const cfg = createConfig(0);
+    const webhook = cfg.channels?.msteams?.webhook;
+    if (!webhook) {
+      throw new Error("expected Microsoft Teams webhook config fixture");
+    }
+    webhook.host = "127.0.0.1";
     const task = monitorMSTeamsProvider({
-      cfg: createConfig(0),
+      cfg,
       runtime: createRuntime(),
       abortSignal: abort.signal,
       conversationStore: stores.conversationStore,
@@ -290,6 +296,8 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     await waitForMSTeamsTestState(() => {
       expect(keepHttpServerTaskAliveMock).toHaveBeenCalledTimes(1);
     });
+    const address = (await resolveStartedServer()).address();
+    expect(address && typeof address !== "string" ? address.address : undefined).toBe("127.0.0.1");
     await Promise.resolve();
     expect(taskSettled).toBe(false);
 
