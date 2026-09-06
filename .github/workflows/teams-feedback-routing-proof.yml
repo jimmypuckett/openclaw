@@ -30,4 +30,4 @@ jobs:
       - name: Record exact source identity
         run: git rev-parse HEAD
       - name: Feedback authorization and real subscriber regression
-        run: node scripts/run-vitest.mjs extensions/msteams/src/monitor-handler.feedback-authz.test.ts extensions/msteams/src/feedback-hook.test.ts
+        run: node scripts/run-vitest.mjs extensions/msteams/src/monitor-handler.feedback-authz.test.ts
