@@ -1,5 +1,7 @@
 // Msteams tests cover monitor handler.feedback authz plugin behavior.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearInternalHooks, registerInternalHook } from "openclaw/plugin-sdk/hook-runtime";
+import { resolveAgentRoute, resolveThreadSessionKeys } from "openclaw/plugin-sdk/routing";
 import type { OpenClawConfig, PluginRuntime, RuntimeEnv } from "../runtime-api.js";
 import { runMSTeamsFeedbackInvokeHandler } from "./feedback-invoke.js";
 import { createMSTeamsMessageHandlerDeps } from "./monitor-handler.test-helpers.js";
@@ -14,7 +16,9 @@ const channelInboundMockState = vi.hoisted(() => ({
   recordChannelFeedbackEvent: vi.fn(async () => true),
 }));
 const feedbackHookMockState = vi.hoisted(() => ({
-  emitMSTeamsAIFeedbackHook: vi.fn(() => true),
+  emitMSTeamsAIFeedbackHook: vi.fn<typeof import("./feedback-hook.js").emitMSTeamsAIFeedbackHook>(
+    () => true,
+  ),
 }));
 
 vi.mock("openclaw/plugin-sdk/channel-inbound", async (importOriginal) => ({
@@ -302,5 +306,63 @@ describe("msteams feedback invoke authz", () => {
 
     expect(channelInboundMockState.recordChannelFeedbackEvent).not.toHaveBeenCalled();
     expect(feedbackReflectionMockState.runFeedbackReflection).not.toHaveBeenCalled();
+  });
+
+  it("delivers team-bound feedback to a real subscriber with the answering route", async () => {
+    const cfg = {
+      bindings: [{ agentId: "team-seat", match: { channel: "msteams", teamId: "team-1" } }],
+      channels: {
+        msteams: {
+          groupPolicy: "allowlist",
+          groupAllowFrom: ["owner-aad"],
+          teams: { "team-1": { channels: { "19:channel@thread.tacv2": { enabled: true } } } },
+        },
+      },
+    } as OpenClawConfig;
+    const deps = createDeps({ cfg });
+    const runtime = createRuntimeStub(vi.fn(async () => []));
+    runtime.channel.routing.resolveAgentRoute = resolveAgentRoute;
+    setMSTeamsRuntime(runtime);
+    const actual = await vi.importActual<typeof import("./feedback-hook.js")>("./feedback-hook.js");
+    feedbackHookMockState.emitMSTeamsAIFeedbackHook.mockImplementation(actual.emitMSTeamsAIFeedbackHook);
+    const subscriber = vi.fn(async () => {});
+    registerInternalHook("message:feedback", subscriber);
+    try {
+      const normalRoute = resolveAgentRoute({
+        cfg,
+        channel: "msteams",
+        teamId: "team-1",
+        peer: { kind: "channel", id: "19:channel@thread.tacv2" },
+      });
+      expect(normalRoute.agentId).toBe("team-seat");
+      const { sessionKey } = resolveThreadSessionKeys({
+        baseSessionKey: normalRoute.sessionKey,
+        parentSessionKey: normalRoute.sessionKey,
+        threadId: "thread-root",
+      });
+      await runMSTeamsFeedbackInvokeHandler(createFeedbackInvokeContext({
+        reaction: "like",
+        conversationId: "19:channel@thread.tacv2;messageid=thread-root",
+        conversationType: "channel",
+        senderId: "owner-aad",
+        teamId: "team-1",
+      }), deps);
+      expect(subscriber).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        type: "message",
+        action: "feedback",
+        sessionKey,
+        context: expect.objectContaining({
+          agentId: normalRoute.agentId,
+          accountId: normalRoute.accountId,
+          providerConversationId: "19:channel@thread.tacv2",
+          providerTargetActivityId: "bot-msg-1",
+          reaction: "like",
+          untrusted: true,
+        }),
+      }));
+    } finally {
+      clearInternalHooks();
+      feedbackHookMockState.emitMSTeamsAIFeedbackHook.mockImplementation(() => true);
+    }
   });
 });
