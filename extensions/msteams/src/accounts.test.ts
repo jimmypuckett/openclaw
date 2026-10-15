@@ -89,4 +89,33 @@ describe("msteams account selection", () => {
     expect(secondary.webhook).toEqual({ path: "/api/messages" });
     expect(resolveMSTeamsAccount({ cfg, accountId: "secondary" }).configured).toBe(true);
   });
+
+  it("keeps inbound tenant policy account-local", () => {
+    const rootTenant = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const supportTenant = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const cfg = {
+      channels: {
+        msteams: {
+          tenantId: "registration-tenant",
+          allowedInboundTenantIds: [rootTenant],
+          accounts: {
+            support: { appId: "support-app", appPassword: "support-secret" },
+            restricted: {
+              appId: "restricted-app",
+              appPassword: "restricted-secret",
+              allowedInboundTenantIds: [supportTenant],
+            },
+          },
+        },
+      },
+    } satisfies OpenClawConfig;
+
+    expect(resolveMSTeamsAccountConfig(cfg, "default").allowedInboundTenantIds).toEqual([
+      rootTenant,
+    ]);
+    expect(resolveMSTeamsAccountConfig(cfg, "support").allowedInboundTenantIds).toBeUndefined();
+    expect(resolveMSTeamsAccountConfig(cfg, "restricted").allowedInboundTenantIds).toEqual([
+      supportTenant,
+    ]);
+  });
 });

@@ -2,6 +2,29 @@ import { describe, expect, it, vi } from "vitest";
 import { MSTeamsConfigSchema } from "../config-api.js";
 
 describe("msteams config schema", () => {
+  const tenantId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  it("accepts an undefined or bounded inbound tenant allowlist", () => {
+    expect(MSTeamsConfigSchema.safeParse({}).success).toBe(true);
+    expect(
+      MSTeamsConfigSchema.safeParse({
+        allowedInboundTenantIds: Array.from({ length: 32 }, (_, index) =>
+          index === 0 ? tenantId.toUpperCase() : tenantId,
+        ),
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    { label: "empty", value: [] },
+    { label: "malformed", value: ["not-a-tenant-uuid"] },
+    { label: "invalid UUID version", value: ["aaaaaaaa-aaaa-0aaa-8aaa-aaaaaaaaaaaa"] },
+    { label: "invalid UUID variant", value: ["aaaaaaaa-aaaa-4aaa-7aaa-aaaaaaaaaaaa"] },
+    { label: "overbound", value: Array.from({ length: 33 }, () => tenantId) },
+  ])("rejects invalid inbound tenant allowlist: $label", ({ value }) => {
+    expect(MSTeamsConfigSchema.safeParse({ allowedInboundTenantIds: value }).success).toBe(false);
+  });
+
   it("validates named SSO after merging root and account settings", () => {
     const inheritedConnection = MSTeamsConfigSchema.safeParse({
       tenantId: "tenant-id",

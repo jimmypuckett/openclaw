@@ -20,6 +20,7 @@ import type { MSTeamsConversationStore } from "./conversation-store.js";
 import { formatUnknownError } from "./errors.js";
 import { runMSTeamsFeedbackInvokeHandler } from "./feedback-invoke.js";
 import { runMSTeamsFileConsentInvokeHandler } from "./file-consent-invoke.js";
+import { checkMSTeamsInboundTenant } from "./inbound-tenant-policy.js";
 import { normalizeMSTeamsConversationId } from "./inbound.js";
 import { isMSTeamsInvokeAuthorized, createMSTeamsActivityHandler } from "./monitor-handler.js";
 import type { MSTeamsMessageHandlerDeps } from "./monitor-handler.types.js";
@@ -323,6 +324,25 @@ export async function monitorMSTeamsProvider(
   };
   handlerDeps.readConfig = createMSTeamsHandlerConfigReader(handlerDeps);
   const handleActivity = createMSTeamsActivityHandler(handlerDeps);
+  const rejectInboundTenantActivity = (activity: unknown): boolean => {
+    if (!msteamsCfg.allowedInboundTenantIds) {
+      return false;
+    }
+    const tenantVerdict = checkMSTeamsInboundTenant({
+      activity,
+      allowedTenantIds: msteamsCfg.allowedInboundTenantIds,
+    });
+    if (tenantVerdict.allowed) {
+      return false;
+    }
+    log.warn?.("msteams inbound activity rejected by tenant policy", {
+      accountId,
+      reason: tenantVerdict.reason,
+      hasChannelDataTenantId: tenantVerdict.hasChannelDataTenantId,
+      hasConversationTenantId: tenantVerdict.hasConversationTenantId,
+    });
+    return true;
+  };
 
   // Durable activities belong to the bot identity, not its mutable config label.
   // Preserve shipped appId queues for every bot, including after account renames.
@@ -330,6 +350,9 @@ export async function monitorMSTeamsProvider(
     accountId: appId,
     runtime,
     dispatch: async (activity, lifecycle, liveContext) => {
+      if (rejectInboundTenantActivity(activity)) {
+        return;
+      }
       // The journaled activity is the dispatch payload; the live context only
       // supplies the transport surface. A duplicate delivery's context must
       // not swap in its own (possibly mutated) activity object.
@@ -432,6 +455,9 @@ export async function monitorMSTeamsProvider(
   const processActivity = app.process.bind(app);
   app.process = async (event) => {
     const activity = event.body;
+    if (rejectInboundTenantActivity(activity)) {
+      return { status: 200, body: {} };
+    }
     if (
       activity.type !== "invoke" ||
       !("name" in activity) ||

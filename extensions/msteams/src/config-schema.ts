@@ -14,6 +14,10 @@ import { z } from "zod";
 import { isAllowedBotFrameworkServiceUrl } from "./bot-framework-service-url.js";
 import { refineMSTeamsConfig } from "./config-schema-refinement.js";
 import { msTeamsChannelConfigUiHints } from "./config-ui-hints.js";
+import {
+  MAX_MSTEAMS_ALLOWED_INBOUND_TENANTS,
+  MSTEAMS_TENANT_ID_PATTERN,
+} from "./inbound-tenant-policy.js";
 
 const SecretInputSchema = buildSecretInputSchema();
 const ToolPolicyBySenderSchema = z.record(z.string(), ToolPolicySchema).optional();
@@ -46,6 +50,11 @@ const MSTeamsAccountConfigBaseSchema = z
     appId: z.string().optional(),
     appPassword: registerSensitiveConfigSchema(SecretInputSchema.optional()),
     tenantId: z.string().optional(),
+    allowedInboundTenantIds: z
+      .array(z.string().regex(MSTEAMS_TENANT_ID_PATTERN, "must be a UUID"))
+      .min(1)
+      .max(MAX_MSTEAMS_ALLOWED_INBOUND_TENANTS)
+      .optional(),
     cloud: z.enum(["Public", "USGov", "USGovDoD", "China"]).optional(),
     serviceUrl: z
       .string()

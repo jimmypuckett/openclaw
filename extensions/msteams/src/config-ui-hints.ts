@@ -14,6 +14,10 @@ export const msTeamsChannelConfigUiHints = {
     label: "MS Teams Cloud",
     help: 'Teams SDK cloud environment for auth, token validation, and token services: "Public", "USGov", "USGovDoD", or "China" (default: Public).',
   },
+  allowedInboundTenantIds: {
+    label: "Allowed Inbound Tenant IDs",
+    help: "Optional allowlist of Microsoft Entra tenant UUIDs accepted from authenticated Teams activities. Leave unset to preserve existing behavior. Named accounts must configure their own list.",
+  },
   serviceUrl: {
     label: "MS Teams Service URL",
     help: "Bot Connector service URL for SDK proactive sends/edits/deletes. Set with cloud for USGov/DoD; set alone for GCC.",

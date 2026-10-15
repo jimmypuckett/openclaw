@@ -71,6 +71,11 @@ export type MSTeamsConfig = Omit<
     appPassword?: SecretInput;
     /** Azure AD Tenant ID (for single-tenant bots). */
     tenantId?: string;
+    /**
+     * Optional inbound activity tenant allowlist. When set, every authenticated
+     * activity must identify one matching tenant in its Teams activity metadata.
+     */
+    allowedInboundTenantIds?: string[];
     /** Teams SDK cloud environment. Default: Public. */
     cloud?: MSTeamsCloudName;
     /**

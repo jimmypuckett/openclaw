@@ -102,7 +102,7 @@ function isAccountScopedChannelConfig(
   );
 }
 
-function clearNamedAccountInheritedIdentity(
+function clearNamedAccountNonInheritedConfig(
   merged: MSTeamsConfig,
   account: Partial<MSTeamsConfig> | undefined,
 ): MSTeamsConfig {
@@ -115,6 +115,9 @@ function clearNamedAccountInheritedIdentity(
   }
   if (account?.legacyWebhook === undefined) {
     delete next.legacyWebhook;
+  }
+  if (account?.allowedInboundTenantIds === undefined) {
+    delete next.allowedInboundTenantIds;
   }
   return next;
 }
@@ -152,7 +155,7 @@ export function resolveMSTeamsAccountConfig(
   ) {
     return merged;
   }
-  const config = clearNamedAccountInheritedIdentity(merged, account);
+  const config = clearNamedAccountNonInheritedConfig(merged, account);
   return {
     ...config,
     webhook: {

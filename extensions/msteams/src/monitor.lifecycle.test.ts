@@ -29,7 +29,11 @@ import {
   routeState,
   resetMSTeamsMonitorMocks,
 } from "./monitor-lifecycle.test-support.js";
-import { createNativeSsoProcessor, createSigninEvent } from "./monitor-sso.test-helpers.js";
+import {
+  createNativeSsoProcessor,
+  createSigninEvent,
+  FIXTURE_TENANT_ID,
+} from "./monitor-sso.test-helpers.js";
 import { monitorMSTeamsProvider } from "./monitor.js";
 import type { MSTeamsPollStore } from "./polls.js";
 
@@ -235,6 +239,7 @@ describe("monitorMSTeamsProvider lifecycle", () => {
     const abort = new AbortController();
     const cfg = createConfig();
     updateMSTeamsConfig(cfg, {
+      allowedInboundTenantIds: [FIXTURE_TENANT_ID],
       sso: { enabled: true, connectionName: "graph" },
     });
 
@@ -252,7 +257,7 @@ describe("monitorMSTeamsProvider lifecycle", () => {
       const app = await resolveSdkApp();
       expect(app.event).toHaveBeenCalledWith("signin", expect.any(Function));
 
-      const event = createSigninEvent(name);
+      const event = createSigninEvent(name, "29:user", FIXTURE_TENANT_ID.toUpperCase());
       const exchangeResult = await app.process(event);
       expect(exchangeResult).toEqual({ status: 200 });
       expect(processSdkActivity).toHaveBeenCalledExactlyOnceWith(event);

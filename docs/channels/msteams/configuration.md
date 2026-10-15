@@ -59,6 +59,8 @@ defaults; account settings override them.
   streaming, SSO, delegated auth, and delivery settings inherit from the root
   unless an account overrides them. `legacyWebhook` never inherits into named
   accounts; keep compatibility listeners explicit and give each a unique port.
+  `allowedInboundTenantIds` also does not inherit: each named account must opt in
+  explicitly.
 - Existing root-level single-bot credentials remain the default account for
   compatibility. Configure either that root identity or `accounts.default`,
   not both.
@@ -94,6 +96,7 @@ Key settings (see [/gateway/configuration](/gateway/configuration) for shared ch
 - `channels.msteams.accounts.<id>.enabled`: enable/disable one Teams bot account.
 - `channels.msteams.accounts.<id>.appId`, `channels.msteams.accounts.<id>.appPassword`, `channels.msteams.accounts.<id>.webhook.path`: per-bot identity, secret, and Gateway callback path.
 - `channels.msteams.appId`, `channels.msteams.appPassword`, `channels.msteams.tenantId`: bot credentials.
+- `channels.msteams.allowedInboundTenantIds`: optional list of up to 32 Microsoft Entra tenant UUIDs accepted from authenticated inbound activities. When configured, each activity must contain at least one of `channelData.tenant.id` or `conversation.tenantId`; all supplied tenant IDs must be valid, equal ignoring case, and present in the list. Missing, malformed, conflicting, and unlisted values are acknowledged without dispatch. This policy is independent of the bot registration `tenantId`. It is account-local, so use `channels.msteams.accounts.<id>.allowedInboundTenantIds` to opt in a named account. Leaving it unset preserves existing behavior. Config changes take effect through the normal Teams channel restart performed by config hot reload, and durable queued activities are rechecked against the restarted account's current policy when delivered.
 - `channels.msteams.cloud`: Teams SDK cloud environment (`Public`, `USGov`, `USGovDoD`, or `China`; default `Public`). Set with `serviceUrl` for USGov/DoD SDK clouds; China uses the SDK preset and stored Azure China Bot Framework conversation references, with Graph-backed helpers disabled until Azure China Graph routing ships.
 - `channels.msteams.serviceUrl`: Bot Connector service URL boundary for SDK proactive operations. Public cloud uses the SDK default; set for GCC (`https://smba.infra.gcc.teams.microsoft.com/teams`), GCC High, or DoD. China accepts Azure China Bot Framework channel hosts when the stored conversation reference comes from Teams operated by 21Vianet.
 - `channels.msteams.webhook.path`: Gateway HTTP route (omitted or empty uses `/api/messages`), served on `gateway.port` (default `18789`).
