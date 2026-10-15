@@ -1,7 +1,7 @@
 export const MAX_MSTEAMS_ALLOWED_INBOUND_TENANTS = 32;
 
 export const MSTEAMS_TENANT_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
 export function isMSTeamsTenantId(value: string): boolean {
   return MSTEAMS_TENANT_ID_PATTERN.test(value);

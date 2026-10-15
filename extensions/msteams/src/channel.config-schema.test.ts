@@ -1,4 +1,6 @@
+import { validateJsonSchemaValue } from "openclaw/plugin-sdk/json-schema-runtime";
 import { describe, expect, it, vi } from "vitest";
+import { MSTeamsChannelConfigSchema } from "../channel-config-api.js";
 import { MSTeamsConfigSchema } from "../config-api.js";
 
 describe("msteams config schema", () => {
@@ -23,6 +25,42 @@ describe("msteams config schema", () => {
     { label: "overbound", value: Array.from({ length: 33 }, () => tenantId) },
   ])("rejects invalid inbound tenant allowlist: $label", ({ value }) => {
     expect(MSTeamsConfigSchema.safeParse({ allowedInboundTenantIds: value }).success).toBe(false);
+  });
+
+  it.each([
+    { label: "lowercase", value: tenantId, valid: true },
+    { label: "uppercase", value: tenantId.toUpperCase(), valid: true },
+    {
+      label: "invalid UUID version",
+      value: "aaaaaaaa-aaaa-0aaa-8aaa-aaaaaaaaaaaa",
+      valid: false,
+    },
+    {
+      label: "invalid UUID variant",
+      value: "aaaaaaaa-aaaa-4aaa-7aaa-aaaaaaaaaaaa",
+      valid: false,
+    },
+  ])("keeps emitted tenant UUID validation aligned for $label", ({ value, valid }) => {
+    const runtime = MSTeamsChannelConfigSchema.runtime;
+    if (!runtime) {
+      throw new Error("Missing Microsoft Teams runtime config schema");
+    }
+    for (const accountId of [undefined, "support"]) {
+      const tenantPolicy = { allowedInboundTenantIds: [value] };
+      const config = accountId
+        ? { accounts: { [accountId]: { enabled: false, ...tenantPolicy } } }
+        : tenantPolicy;
+
+      expect(runtime.safeParse(config).success).toBe(valid);
+      expect(
+        validateJsonSchemaValue({
+          schema: MSTeamsChannelConfigSchema.schema,
+          cacheKey: "msteams-public-channel-config-schema",
+          value: config,
+          applyDefaults: true,
+        }).ok,
+      ).toBe(valid);
+    }
   });
 
   it("validates named SSO after merging root and account settings", () => {
