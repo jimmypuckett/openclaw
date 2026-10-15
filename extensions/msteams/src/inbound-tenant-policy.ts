@@ -18,16 +18,25 @@ type MSTeamsInboundTenantVerdict =
       hasConversationTenantId: boolean;
     };
 
+function readObjectProperty(value: unknown, property: string): unknown {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  return Reflect.get(value, property);
+}
+
 export function checkMSTeamsInboundTenant(params: {
   activity: unknown;
   allowedTenantIds: readonly string[];
 }): MSTeamsInboundTenantVerdict {
-  const activity = params.activity as {
-    channelData?: { tenant?: { id?: unknown } };
-    conversation?: { tenantId?: unknown };
-  };
-  const channelDataTenantId = activity?.channelData?.tenant?.id;
-  const conversationTenantId = activity?.conversation?.tenantId;
+  const channelDataTenantId = readObjectProperty(
+    readObjectProperty(readObjectProperty(params.activity, "channelData"), "tenant"),
+    "id",
+  );
+  const conversationTenantId = readObjectProperty(
+    readObjectProperty(params.activity, "conversation"),
+    "tenantId",
+  );
   const presentTenantIds = [channelDataTenantId, conversationTenantId].filter(
     (value) => value !== undefined,
   );
@@ -39,19 +48,20 @@ export function checkMSTeamsInboundTenant(params: {
   if (presentTenantIds.length === 0) {
     return { allowed: false, reason: "missing", ...diagnostic };
   }
-  const normalizedTenantIds: string[] = [];
+  let normalizedTenantId: string | undefined;
   for (const value of presentTenantIds) {
     if (typeof value !== "string" || !isMSTeamsTenantId(value)) {
       return { allowed: false, reason: "malformed", ...diagnostic };
     }
-    normalizedTenantIds.push(value.toLowerCase());
-  }
-  if (new Set(normalizedTenantIds).size !== 1) {
-    return { allowed: false, reason: "conflicting", ...diagnostic };
+    const normalizedValue = value.toLowerCase();
+    if (normalizedTenantId !== undefined && normalizedValue !== normalizedTenantId) {
+      return { allowed: false, reason: "conflicting", ...diagnostic };
+    }
+    normalizedTenantId = normalizedValue;
   }
 
   const allowedTenantIds = new Set(params.allowedTenantIds.map((value) => value.toLowerCase()));
-  if (!allowedTenantIds.has(normalizedTenantIds[0]!)) {
+  if (normalizedTenantId === undefined || !allowedTenantIds.has(normalizedTenantId)) {
     return { allowed: false, reason: "foreign", ...diagnostic };
   }
   return { allowed: true };
