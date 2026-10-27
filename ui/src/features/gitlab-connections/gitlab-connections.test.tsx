@@ -135,7 +135,7 @@ it("shows the verified personal publisher and disconnects without a fallback", a
   expect(ui.container.textContent).toContain(issuer);
   ui.button("Disconnect")?.click();
   await waitForSolid(() =>
-    expect(ui.container.textContent).toContain("No personal GitLab account connected"),
+    expect(ui.container.textContent).toContain("No GitLab account connected"),
   );
   expect(request).toHaveBeenCalledWith("users.gitlab.disconnect", {});
   expect(ui.container.textContent).not.toContain("system account");

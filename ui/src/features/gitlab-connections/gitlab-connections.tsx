@@ -9,7 +9,7 @@ import { useApplication } from "../../lib/reactive/context.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
 import { GitLabConnectionsState } from "./gitlab-connections-state.ts";
 
-/** Personal GitLab identity for repository publishing. */
+/** User-bound GitLab identity for repository publishing. */
 export function GitLabConnections(
   props: {
     connectRequest?: number;
@@ -70,7 +70,7 @@ export function GitLabConnections(
     <Show when={view().eligible && (view().status?.configured || view().error)}>
       <div data-gitlab-connections="personal">
         <SettingsSection
-          title="Personal GitLab"
+          title="GitLab"
           description="Connect your own GitLab account for repository publishing."
           actions={
             <Show when={view().status?.configured}>
@@ -113,7 +113,7 @@ export function GitLabConnections(
                   ? `GitLab publications use @${view().status!.account!.login}.`
                   : view().status?.reconnectRequired
                     ? "Reconnect your GitLab account before publishing."
-                    : "No personal GitLab account connected."
+                    : "No GitLab account connected."
               }
               control={
                 <SettingsStatus
@@ -202,7 +202,7 @@ export function GitLabConnections(
             </Show>
             <Show when={view().status?.connected || view().pending}>
               <SettingsRow
-                title="Disconnect personal GitLab"
+                title="Disconnect GitLab"
                 description="Removes this profile’s selected GitLab account."
                 control={
                   <button

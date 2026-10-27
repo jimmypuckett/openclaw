@@ -128,7 +128,7 @@ const enGitHub = {
     gitlabSystem: "System GitLab",
     gitlabPublish: "Publish merge request",
     gitlabOpen: "Open merge request",
-    gitlabNoAccount: "Connect your personal GitLab account in Profile to publish this repository.",
+    gitlabNoAccount: "Connect your GitLab account in Profile to publish this repository.",
     gitlabPersonalWorkspace:
       "Wait for work to finish and reclaim the workspace to publish with My GitLab.",
     gitlabDispatched: "GitLab {kind} was dispatched; its remote outcome may still be unknown.",
