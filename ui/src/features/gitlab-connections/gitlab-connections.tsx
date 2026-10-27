@@ -1,13 +1,17 @@
 import { createMemo, createSignal, onSettled, Show } from "solid-js";
+import { pathForAgentPanel } from "../../app-route-paths.ts";
 import {
   SettingsRow,
   SettingsSection,
   SettingsStatus,
+  SettingsSegmented,
   SettingsValue,
 } from "../../components/solid/settings-ui.tsx";
 import { useApplication } from "../../lib/reactive/context.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
 import { GitLabConnectionsState } from "./gitlab-connections-state.ts";
+import { GitLabManagedIdentity } from "./gitlab-managed-identity-view.tsx";
+import { GitLabManagedIdentityState } from "./gitlab-managed-identity.ts";
 
 /** User-bound GitLab identity for repository publishing. */
 export function GitLabConnections(
@@ -18,11 +22,21 @@ export function GitLabConnections(
 ) {
   const context = useApplication();
   const [setupOpen, setSetupOpen] = createSignal(false);
-  const state = new GitLabConnectionsState();
+  const [purpose, setPurpose] = createSignal<"personal" | "system">("personal");
+  const system = new GitLabManagedIdentityState();
+  const agent = new GitLabManagedIdentityState();
+  const systemProjection = projectOwner(system, (owner) => owner.view);
+  const systemView = createMemo(() => systemProjection.read());
+  const state = new GitLabConnectionsState(async () => {
+    await Promise.all([system.verify(), agent.verify()]);
+  });
   const projection = projectOwner(state, (owner) => owner.view);
   const view = createMemo(() => projection.read());
   onSettled(() => {
-    props.onConnectReady?.(() => setSetupOpen(true));
+    props.onConnectReady?.(() => {
+      setPurpose("personal");
+      setSetupOpen(true);
+    });
     const notifyAvailability = () => {
       props.onAvailable?.(state.view.eligible && state.view.status?.configured === true);
     };
@@ -30,14 +44,31 @@ export function GitLabConnections(
     notifyAvailability();
     const sync = (snapshot: typeof context.gateway.snapshot) => {
       state.sync(snapshot);
+      const agentId = context.settingsAgentSelection.state.selectedId;
+      system.sync(snapshot, agentId ? { scope: "system", agentId } : null);
+      agent.sync(snapshot, agentId ? { scope: "agent", agentId } : null);
     };
     const unsubscribe = context.gateway.subscribe(sync);
+    const refreshTargets = () => sync(context.gateway.snapshot);
+    const subscriptions = [
+      context.settingsAgentSelection.subscribe(refreshTargets),
+      context.agents.subscribe(refreshTargets),
+      context.runtimeConfig.subscribe(() => {
+        refreshTargets();
+        void system.verify();
+        void agent.verify();
+      }),
+    ];
     sync(context.gateway.snapshot);
     return () => {
       props.onConnectReady?.(null);
       unsubscribeAvailability();
       unsubscribe();
-
+      for (const stop of subscriptions) {
+        stop();
+      }
+      system.dispose();
+      agent.dispose();
       state.dispose();
     };
   });
@@ -54,7 +85,10 @@ export function GitLabConnections(
                 type="button"
                 class="btn btn--sm"
                 disabled={view().busy || view().loading}
-                onClick={() => setSetupOpen(true)}
+                onClick={() => {
+                  setPurpose("personal");
+                  setSetupOpen(true);
+                }}
               >
                 Manage connections
               </button>
@@ -64,6 +98,8 @@ export function GitLabConnections(
                 disabled={view().busy}
                 onClick={() => {
                   void state.loadStatus();
+                  void system.verify();
+                  void agent.verify();
                 }}
               >
                 Verify
@@ -124,7 +160,10 @@ export function GitLabConnections(
                     type="button"
                     class="btn btn--sm"
                     disabled={view().busy || view().loading}
-                    onClick={() => setSetupOpen(true)}
+                    onClick={() => {
+                      setPurpose("personal");
+                      setSetupOpen(true);
+                    }}
                   >
                     {view().status?.connected ? "Change My GitLab" : "Connect My GitLab"}
                   </button>
@@ -138,7 +177,65 @@ export function GitLabConnections(
                 control={<SettingsValue value={`@${view().status!.account!.login}`} />}
               />
             </Show>
+            <GitLabManagedIdentity
+              identity={system}
+              readView={systemView}
+              scope="system"
+              mode="account"
+              title="System GitLab"
+              description="Default account for agent commands and explicitly selected publication."
+              setupOpen={setupOpen() && purpose() === "system"}
+              onOpenSetup={() => {
+                setPurpose("system");
+                setSetupOpen(true);
+              }}
+              onCloseSetup={() => setSetupOpen(false)}
+            />
+            <GitLabManagedIdentity
+              identity={agent}
+              scope="agent"
+              title="GitLab for this agent"
+              description="Account used for this agent’s commands and explicitly selected publication."
+              onViewAccount={() => {
+                const agentId = context.settingsAgentSelection.state.selectedId;
+                if (agentId) {
+                  context.navigate("agents", {
+                    pathname: pathForAgentPanel(agentId, "tools", context.basePath),
+                  });
+                }
+              }}
+            />
             <Show when={setupOpen()}>
+              <SettingsRow
+                title="Connect GitLab"
+                control={
+                  systemView().canAdmin ? (
+                    <SettingsSegmented
+                      value={purpose()}
+                      ariaLabel="GitLab connection purpose"
+                      options={[
+                        { value: "personal", label: "For me" },
+                        { value: "system", label: "For the system" },
+                      ]}
+                      onChange={setPurpose}
+                    />
+                  ) : (
+                    <SettingsValue value="For me" />
+                  )
+                }
+              />
+            </Show>
+            <GitLabManagedIdentity
+              identity={system}
+              readView={systemView}
+              scope="system"
+              mode="setup"
+              title="System GitLab"
+              description="Default account for agent commands and explicitly selected publication."
+              setupOpen={setupOpen() && purpose() === "system"}
+              onCloseSetup={() => setSetupOpen(false)}
+            />
+            <Show when={setupOpen() && purpose() === "personal"}>
               <SettingsRow
                 title="GitLab authorization"
                 description="Sign in through GitLab. You will return here to finish connecting automatically."

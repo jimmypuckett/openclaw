@@ -1,4 +1,5 @@
 import type { RouteLocation } from "@openclaw/uirouter";
+import { GITLAB_OAUTH_CALLBACK_PATH } from "../../../../src/shared/gitlab-oauth-callback.js";
 
 let pendingCallback: string | null = null;
 
@@ -8,7 +9,7 @@ export function captureGitLabOAuthCallback(
   basePath: string,
   origin: string,
 ): RouteLocation {
-  if (location.pathname !== `${basePath}/oauth/gitlab/callback`) {
+  if (location.pathname !== `${basePath}${GITLAB_OAUTH_CALLBACK_PATH}`) {
     return location;
   }
   pendingCallback = `${origin}${location.pathname}${location.search}${location.hash}`;

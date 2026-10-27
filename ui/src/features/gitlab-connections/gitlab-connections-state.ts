@@ -1,3 +1,4 @@
+import { managedGitLabCallbackRequestId } from "../../../../src/shared/gitlab-oauth-callback.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorReadAccess } from "../../app/operator-access.ts";
@@ -32,7 +33,7 @@ export type GitLabConnectionView = {
   error: string | null;
 };
 
-function safeAuthorizationUrl(raw: string, issuer: string | undefined): boolean {
+export function isGitLabAuthorizationUrl(raw: string, issuer: string | undefined): boolean {
   try {
     const url = new URL(raw);
     const authority = new URL(issuer ?? "");
@@ -51,6 +52,7 @@ function safeAuthorizationUrl(raw: string, issuer: string | undefined): boolean 
 
 /** Presentation owner only. The Gateway owns tokens, identity, and authorization. */
 export class GitLabConnectionsState {
+  constructor(private readonly onManagedComplete?: () => void | Promise<void>) {}
   view: GitLabConnectionView = {
     eligible: false,
     loading: false,
@@ -160,7 +162,7 @@ export class GitLabConnectionsState {
       if (!this.current(client, generation, sequence)) {
         return;
       }
-      if (!safeAuthorizationUrl(pending.authorizationUrl, this.view.status?.issuer)) {
+      if (!isGitLabAuthorizationUrl(pending.authorizationUrl, this.view.status?.issuer)) {
         throw new Error("Invalid GitLab authorization URL");
       }
       this.view = {
@@ -185,7 +187,9 @@ export class GitLabConnectionsState {
 
   async complete(callbackUrl: string) {
     const client = this.client;
-    const requestId = this.view.pending?.requestId ?? this.view.status?.pendingRequestId;
+    const managedRequestId = managedGitLabCallbackRequestId(callbackUrl);
+    const requestId =
+      managedRequestId ?? this.view.pending?.requestId ?? this.view.status?.pendingRequestId;
     if (!client || this.view.busy || !callbackUrl.trim()) {
       return;
     }
@@ -201,11 +205,29 @@ export class GitLabConnectionsState {
     const sequence = ++this.sequence;
     this.view = { ...this.view, busy: true, error: null };
     this.publish();
+    let managedAccepted = false;
     try {
-      const status = await client.request<GitLabConnectionStatus>(
-        "users.gitlab.authorize.complete",
-        { requestId, callbackUrl: callbackUrl.trim() },
-      );
+      let status: GitLabConnectionStatus;
+      if (managedRequestId) {
+        await client.request("tools.gitlab.authorize.complete", {
+          requestId,
+          callbackUrl: callbackUrl.trim(),
+        });
+        managedAccepted = true;
+        if (!this.current(client, generation, sequence)) {
+          return;
+        }
+        await this.onManagedComplete?.();
+        if (!this.current(client, generation, sequence)) {
+          return;
+        }
+        status = await client.request<GitLabConnectionStatus>("users.gitlab.status", {});
+      } else {
+        status = await client.request<GitLabConnectionStatus>("users.gitlab.authorize.complete", {
+          requestId,
+          callbackUrl: callbackUrl.trim(),
+        });
+      }
       if (!this.current(client, generation, sequence)) {
         return;
       }
@@ -218,7 +240,11 @@ export class GitLabConnectionsState {
         ...this.view,
         busy: false,
         pending: null,
-        error: "Could not complete GitLab sign-in. Start again.",
+        error: managedAccepted
+          ? "GitLab authorization was accepted. Verify the selected connection to refresh its status."
+          : managedRequestId
+            ? "GitLab authorization could not be confirmed. Verify the selected connection before retrying."
+            : "Could not complete GitLab sign-in. Start again.",
       };
     }
     this.publish();

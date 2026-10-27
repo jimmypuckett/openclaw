@@ -4,6 +4,29 @@ import { closedObject } from "./closed-object.js";
 import { NonEmptyString } from "./primitives.js";
 import { stringLiteralUnion } from "./string-literal-union.js";
 
+const managedScope = Type.Union([Type.Literal("system"), Type.Literal("agent")]);
+const managedRequestId = Type.String({ pattern: "^gitlab-setup-[a-f0-9]{32}$" });
+export const ToolsGitLabStatusParamsSchema = closedObject({
+  agentId: Type.Optional(NonEmptyString),
+  selectedScope: Type.Optional(managedScope),
+});
+export const ToolsGitLabConfigureParamsSchema = closedObject({
+  agentId: Type.Optional(NonEmptyString),
+  scope: managedScope,
+  mode: Type.Literal("inherit"),
+});
+export const ToolsGitLabAuthorizeStartParamsSchema = closedObject({
+  agentId: Type.Optional(NonEmptyString),
+  scope: managedScope,
+});
+export const ToolsGitLabAuthorizeCompleteParamsSchema = closedObject({
+  requestId: managedRequestId,
+  callbackUrl: Type.String({ minLength: 1, maxLength: 4096 }),
+});
+export const ToolsGitLabAuthorizeCancelParamsSchema = closedObject({
+  requestId: managedRequestId,
+});
+
 export const UsersGitLabStatusParamsSchema = closedObject({});
 export const UsersGitLabAuthorizeStartParamsSchema = closedObject({});
 export const UsersGitLabAuthorizeCompleteParamsSchema = closedObject({
@@ -17,6 +40,38 @@ export const GitLabPublicationAccountSchema = closedObject({
   accountId: id,
   login: Type.String({ minLength: 1, maxLength: 255 }),
 });
+const managedIdentityStatus = closedObject({
+  configured: Type.Literal(true),
+  profileId: Type.String({ pattern: "^glp_[a-f0-9]{32}$" }),
+  issuer: NonEmptyString,
+  credentialState: Type.Union([Type.Literal("available"), Type.Literal("unavailable")]),
+  account: Type.Union([Type.Null(), GitLabPublicationAccountSchema]),
+  accessExpiresAtMs: Type.Union([Type.Null(), Type.Integer({ minimum: 0 })]),
+  refreshState: Type.Union([
+    Type.Literal("available"),
+    Type.Literal("unavailable"),
+    Type.Literal("reconnect_required"),
+    Type.Literal("expired"),
+    Type.Literal("failed"),
+  ]),
+});
+export const ToolsGitLabStatusResultSchema = Type.Union([
+  closedObject({ configured: Type.Literal(false) }),
+  closedObject({
+    configured: Type.Literal(true),
+    issuer: NonEmptyString,
+    selectedScope: managedScope,
+    selected: Type.Union([Type.Null(), managedIdentityStatus]),
+    effective: Type.Union([Type.Null(), managedIdentityStatus]),
+    effectiveSource: Type.Union([
+      Type.Literal("system-configured"),
+      Type.Literal("agent-override"),
+      Type.Literal("unavailable"),
+    ]),
+  }),
+]);
+export type ToolsGitLabStatusResult = Static<typeof ToolsGitLabStatusResultSchema>;
+
 export const GitLabPublicationSelectionSchema = Type.Union([
   closedObject({
     source: Type.Literal("shared"),

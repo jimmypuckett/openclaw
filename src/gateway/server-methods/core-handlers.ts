@@ -24,6 +24,7 @@ const CORE_GATEWAY_HANDLER_MODULES = {
   artifacts: () => import("./artifacts.js").then((module) => module.artifactsHandlers),
   board: () => import("./board.js").then((module) => module.boardHandlers),
   audit: () => import("./audit.js").then((module) => module.auditHandlers),
+  "tools-gitlab": () => import("./tools-gitlab.js").then((module) => module.toolsGitLabHandlers),
   gitlab: () => import("./gitlab.js").then((module) => module.gitLabHandlers),
   users: () => import("./users.js").then((module) => module.usersHandlers),
   "users-mentionable": () =>

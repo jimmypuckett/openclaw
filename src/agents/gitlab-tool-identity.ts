@@ -1,15 +1,13 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { GitLabToolIdentityConfig } from "../config/types.tools.js";
 import { updateGitLabToolIdentityConfig } from "../gateway/gitlab-tool-identity-config.js";
 import { gitNullConfigPath } from "../infra/git-exec.js";
 import { normalizeDatabasePath } from "../infra/sqlite-worker-identity.js";
-import { normalizeAgentId } from "../routing/session-key.js";
 import { subscribeSecretStoreChanges } from "../secrets/store/secret-store-changes.js";
 import { captureOpenClawStateReadContext } from "../state/openclaw-state-worker-context.js";
 import {
@@ -17,7 +15,6 @@ import {
   matchesAgentLifecycleBindingAsync,
   type AgentLifecycleBinding,
 } from "./agent-lifecycle-registry.js";
-import { resolveAgentEntry } from "./agent-scope-config.js";
 import {
   normalizeGitLabIssuer,
   validateGitLabOAuthConfig,
@@ -37,31 +34,28 @@ import {
   verifyGitLabAccount,
   type GitLabAccount,
 } from "./gitlab-oauth-client.js";
+import { prepareGitLabToolEnvironment } from "./gitlab-tool-environment.js";
 import {
   notifyManagedGitLabProfileChanged,
   onManagedGitLabProfileChanged,
 } from "./gitlab-tool-identity-lifecycle.js";
 import {
+  resolveConfiguredGitLabToolIdentity,
+  resolveEffectiveGitLabToolIdentity,
+  resolveManagedGitLabProfileDir,
+} from "./gitlab-tool-identity-selection.js";
+import {
   readManagedGitLabProfileToken,
   writeManagedGitLabProfileFiles,
 } from "./gitlab-tool-profile-files.js";
+export {
+  resolveConfiguredGitLabToolIdentity,
+  resolveEffectiveGitLabToolIdentity,
+  resolveManagedGitLabProfileDir,
+} from "./gitlab-tool-identity-selection.js";
 
-const AMBIENT_GITLAB_AUTH = [
-  "GITLAB_TOKEN",
-  "GITLAB_ACCESS_TOKEN",
-  "OAUTH_TOKEN",
-  "CI_JOB_TOKEN",
-  "GLAB_CONFIG_DIR",
-  "GITLAB_HOST",
-  "GITLAB_API_HOST",
-  "GITLAB_API_PROTOCOL",
-  "GITLAB_URI",
-  "GITLAB_CI",
-  "GLAB_CI",
-  "CI_SERVER_FQDN",
-  "CI_SERVER_HOST",
-  "CI_SERVER_URL",
-] as const;
+export { prepareGitLabToolEnvironment } from "./gitlab-tool-environment.js";
+
 const refreshFlights = new Map<string, Promise<void>>();
 
 export { onManagedGitLabProfileChanged } from "./gitlab-tool-identity-lifecycle.js";
@@ -70,7 +64,9 @@ function profileFileSignature(profileDir: string): string {
   return [profileDir, path.join(profileDir, "config.yml")]
     .map((pathname) => {
       const stat = fsSync.lstatSync(pathname, { bigint: true });
-      if (stat.isSymbolicLink()) throw new Error("Managed GitLab CLI profile changed.");
+      if (stat.isSymbolicLink()) {
+        throw new Error("Managed GitLab CLI profile changed.");
+      }
       return [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, stat.ctimeNs].join(":");
     })
     .join("|");
@@ -104,84 +100,6 @@ async function ensureManagedGitLabProfileFresh(params: {
     inspected = await inspectGitLabManagedOAuthRecord(key);
   }
   return inspected;
-}
-
-export function resolveConfiguredGitLabToolIdentity(params: {
-  config: OpenClawConfig;
-  agentId: string;
-  scope: GitLabIdentityScope;
-}): GitLabToolIdentityConfig | undefined {
-  return params.scope === "agent"
-    ? resolveAgentEntry(params.config, params.agentId)?.tools?.gitlab
-    : params.config.tools?.gitlab;
-}
-
-export function resolveEffectiveGitLabToolIdentity(params: {
-  config: OpenClawConfig;
-  agentId: string;
-}):
-  | {
-      source: "agent-override" | "system-configured";
-      scope: GitLabIdentityScope;
-      identity: GitLabToolIdentityConfig;
-    }
-  | undefined {
-  const agent = resolveConfiguredGitLabToolIdentity({ ...params, scope: "agent" });
-  if (agent) return { source: "agent-override", scope: "agent", identity: agent };
-  const system = resolveConfiguredGitLabToolIdentity({ ...params, scope: "system" });
-  return system ? { source: "system-configured", scope: "system", identity: system } : undefined;
-}
-
-export function resolveManagedGitLabProfileDir(params: {
-  scope: GitLabIdentityScope;
-  agentId: string;
-  profileId: string;
-  env?: NodeJS.ProcessEnv;
-}): string {
-  if (!/^glp_[a-f0-9]{32}$/u.test(params.profileId))
-    throw new Error("Invalid managed GitLab profile ID.");
-  const root = path.join(resolveStateDir(params.env), "credentials", "gitlab");
-  return params.scope === "system"
-    ? path.join(root, "system", params.profileId)
-    : path.join(
-        root,
-        "agents",
-        createHash("sha256").update(normalizeAgentId(params.agentId)).digest("hex"),
-        params.profileId,
-      );
-}
-
-/** Every selected run must scrub ambient glab, GitLab, and Git author configuration. */
-export function prepareGitLabToolEnvironment(params: {
-  config: OpenClawConfig;
-  agentId: string;
-  env?: NodeJS.ProcessEnv;
-}) {
-  const selected = resolveEffectiveGitLabToolIdentity(params);
-  const scrub: Record<string, string> = {};
-  if (selected) {
-    for (const key of AMBIENT_GITLAB_AUTH) scrub[key] = "";
-  }
-  return Object.freeze({
-    credentialScrubEnv: Object.freeze(scrub),
-    excludedStoreNames: Object.freeze(
-      selected ? [`gitlab-oauth-${selected.identity.profileId.slice(4)}`] : [],
-    ),
-    localIdentityEnv: Object.freeze(
-      selected
-        ? {
-            GLAB_CONFIG_DIR: resolveManagedGitLabProfileDir({
-              ...params,
-              scope: selected.scope,
-              profileId: selected.identity.profileId,
-            }),
-            GITLAB_HOST: new URL(selected.identity.issuer).host,
-          }
-        : {},
-    ),
-    managedLocalIdentity: Boolean(selected),
-    ...(selected ? { hostExecutionRequired: true as const } : {}),
-  });
 }
 
 function sameActor(left: GitLabAccount, right: GitLabAccount): boolean {
@@ -221,10 +139,13 @@ export async function prepareGitLabToolCredential(params: {
   env?: NodeJS.ProcessEnv;
 }) {
   const selected = resolveEffectiveGitLabToolIdentity(params);
-  if (!selected) throw new Error("Select a managed GitLab identity before running glab.");
+  if (!selected) {
+    throw new Error("Select a managed GitLab identity before running glab.");
+  }
   const oauth = validateGitLabOAuthConfig(params.oauthConfig);
-  if (oauth.issuer !== normalizeGitLabIssuer(selected.identity.issuer))
+  if (oauth.issuer !== normalizeGitLabIssuer(selected.identity.issuer)) {
     throw new Error("Managed GitLab issuer changed.");
+  }
   const inspected = await ensureManagedGitLabProfileFresh({
     config: params.config,
     getCurrentConfig: params.getCurrentConfig,
@@ -252,10 +173,14 @@ export async function prepareGitLabToolCredential(params: {
   const fileSignature = profileFileSignature(profileDir);
   let revoked = false;
   const unsubscribeStore = subscribeSecretStoreChanges((change) => {
-    if (change.databasePath === databasePath && change.gitlabManagedOAuth) revoked = true;
+    if (change.databasePath === databasePath && change.gitlabManagedOAuth) {
+      revoked = true;
+    }
   });
   const unsubscribeProfile = onManagedGitLabProfileChanged((change) => {
-    if (change.profileDir === profileDir) revoked = true;
+    if (change.profileDir === profileDir) {
+      revoked = true;
+    }
   });
   const close = () => {
     revoked = true;
@@ -263,7 +188,9 @@ export async function prepareGitLabToolCredential(params: {
     unsubscribeProfile();
   };
   const assertCurrentSync = () => {
-    if (revoked) throw new Error("Managed GitLab credential changed.");
+    if (revoked) {
+      throw new Error("Managed GitLab credential changed.");
+    }
     params.assertCurrentSync?.();
     (source.assertPublicationCurrent ?? source.admission.assertCurrent)();
     const current = resolveEffectiveGitLabToolIdentity({
@@ -278,10 +205,12 @@ export async function prepareGitLabToolCredential(params: {
     ) {
       throw new Error("Managed GitLab selection changed.");
     }
-    if (record.tokens.expiresAtMs <= Date.now())
+    if (record.tokens.expiresAtMs <= Date.now()) {
       throw new Error("Managed GitLab credential expired.");
-    if (profileFileSignature(profileDir) !== fileSignature)
+    }
+    if (profileFileSignature(profileDir) !== fileSignature) {
       throw new Error("Managed GitLab CLI profile changed.");
+    }
   };
   const assertCurrent = async () => {
     assertCurrentSync();
@@ -307,8 +236,9 @@ export async function prepareGitLabToolCredential(params: {
     await assertCurrent();
     actor = await verifyGitLabAccount(oauth, record.tokens, { assertCurrent, allowBot: true });
     await assertCurrent();
-    if (!sameActor(actor, record.account))
+    if (!sameActor(actor, record.account)) {
       throw new Error("Managed GitLab actor changed; reconnect this identity.");
+    }
     await assertCurrent();
   } catch (error) {
     close();
@@ -316,13 +246,16 @@ export async function prepareGitLabToolCredential(params: {
   }
   const scrub = prepareGitLabToolEnvironment(params);
   const env: NodeJS.ProcessEnv = { ...(params.env ?? process.env) };
-  for (const key of Object.keys(scrub.credentialScrubEnv)) delete env[key];
+  for (const key of Object.keys(scrub.credentialScrubEnv)) {
+    delete env[key];
+  }
   for (const key of Object.keys(env)) {
     if (
       /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+|PARAMETERS|GLOBAL|SYSTEM|NOSYSTEM)$/u.test(key) ||
       /^GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL)$/u.test(key)
-    )
+    ) {
       delete env[key];
+    }
   }
   Object.assign(env, scrub.localIdentityEnv, {
     GITLAB_HOST: new URL(record.issuer).host,
@@ -370,12 +303,13 @@ export async function resolveGitLabToolIdentityStatus(params: {
 }) {
   const selected = resolveConfiguredGitLabToolIdentity({ ...params, scope: params.selectedScope });
   const effective = resolveEffectiveGitLabToolIdentity(params);
-  if (!selected)
+  if (!selected) {
     return {
       selectedScope: params.selectedScope,
       selected: null,
       effectiveSource: effective?.source ?? "unavailable",
     };
+  }
   let inspected: Awaited<ReturnType<typeof inspectGitLabManagedOAuthRecord>>;
   try {
     inspected = await ensureManagedGitLabProfileFresh({
@@ -400,7 +334,9 @@ export async function resolveGitLabToolIdentityStatus(params: {
   ) {
     try {
       const oauth = validateGitLabOAuthConfig(params.oauthConfig);
-      if (oauth.issuer !== selected.issuer) throw new Error("GitLab issuer changed.");
+      if (oauth.issuer !== selected.issuer) {
+        throw new Error("GitLab issuer changed.");
+      }
       await params.assertCurrent?.();
       const actor = await verifyGitLabAccount(oauth, record.tokens, { allowBot: true });
       await params.assertCurrent?.();
@@ -473,13 +409,16 @@ export async function installManagedGitLabProfile(params: {
     throw new Error("Managed GitLab agent lifecycle binding is required.");
   }
   const oauth = validateGitLabOAuthConfig(params.oauthConfig);
-  if (oauth.issuer !== params.account.issuer) throw new Error("Managed GitLab issuer changed.");
+  if (oauth.issuer !== params.account.issuer) {
+    throw new Error("Managed GitLab issuer changed.");
+  }
   const verified = await verifyGitLabAccount(oauth, params.tokens, {
     assertCurrent: params.assertCurrent,
     allowBot: true,
   });
-  if (!sameActor(verified, params.account))
+  if (!sameActor(verified, params.account)) {
     throw new Error("Managed GitLab actor changed before installation.");
+  }
   await params.assertCurrent?.();
   const profileId = createManagedGitLabProfileId();
   const record = createGitLabManagedOAuthRecord({
@@ -521,11 +460,14 @@ export async function finishPendingManagedGitLabProfile(params: {
 }) {
   await params.assertCurrent?.();
   const inspected = await inspectGitLabManagedOAuthRecord(params.profileId);
-  if (inspected.state !== "valid" || !inspected.record.pendingInitial)
+  if (inspected.state !== "valid" || !inspected.record.pendingInitial) {
     throw new Error("No pending GitLab activation.");
+  }
   const record = inspected.record;
   const pendingInitial = record.pendingInitial;
-  if (!pendingInitial) throw new Error("No pending GitLab activation.");
+  if (!pendingInitial) {
+    throw new Error("No pending GitLab activation.");
+  }
   const config = params.getCurrentConfig();
   const selected = resolveConfiguredGitLabToolIdentity({
     config,
@@ -538,8 +480,9 @@ export async function finishPendingManagedGitLabProfile(params: {
     selected.issuer !== record.issuer ||
     record.scope !== params.scope ||
     record.agentId !== params.agentId
-  )
+  ) {
     throw new Error("GitLab activation target changed.");
+  }
   if (params.scope === "agent") {
     const binding = pendingInitial.agentLifecycleBinding;
     if (
@@ -550,8 +493,9 @@ export async function finishPendingManagedGitLabProfile(params: {
       throw new Error("Managed GitLab agent changed before activation.");
     }
   }
-  if (record.tokens.expiresAtMs <= Date.now())
+  if (record.tokens.expiresAtMs <= Date.now()) {
     throw new Error("Managed GitLab activation expired.");
+  }
   const profileDir = resolveManagedGitLabProfileDir({ ...params, profileId: record.profileId });
   if (
     (await readManagedGitLabProfileToken(profileDir, record.issuer)) !== record.tokens.accessToken
@@ -609,7 +553,9 @@ export async function retireManagedGitLabProfile(params: {
   agentLifecycleBinding?: AgentLifecycleBinding;
 }) {
   const selected = resolveConfiguredGitLabToolIdentity(params);
-  if (!selected) return { retired: false };
+  if (!selected) {
+    return { retired: false };
+  }
   await updateGitLabToolIdentityConfig({
     scope: params.scope,
     agentId: params.agentId,
@@ -617,14 +563,21 @@ export async function retireManagedGitLabProfile(params: {
     agentLifecycleBinding: params.agentLifecycleBinding,
     assertCurrent: params.assertCurrent,
   });
-  await removeManagedGitLabProfile({
-    scope: params.scope,
-    agentId: params.agentId,
-    profileId: selected.profileId,
-    getCurrentConfig: params.getCurrentConfig,
-    assertCurrent: params.assertCurrent,
-  });
-  return { retired: true };
+  try {
+    await removeManagedGitLabProfile({
+      scope: params.scope,
+      agentId: params.agentId,
+      profileId: selected.profileId,
+      getCurrentConfig: params.getCurrentConfig,
+      assertCurrent: params.assertCurrent,
+    });
+    return { retired: true, cleanupPending: false };
+  } catch {
+    // Config removal is already durable. The managed lifecycle retries cleanup once
+    // neither persisted nor runtime config references this profile.
+    await params.assertCurrent?.();
+    return { retired: true, cleanupPending: true };
+  }
 }
 
 /** A durable claim precedes the provider call; uncertain refresh never replays a rotating token. */
@@ -638,9 +591,13 @@ export async function refreshManagedGitLabProfile(params: {
   env?: NodeJS.ProcessEnv;
 }) {
   const identity = resolveConfiguredGitLabToolIdentity(params);
-  if (!identity) throw new Error("Managed GitLab identity is not selected.");
+  if (!identity) {
+    throw new Error("Managed GitLab identity is not selected.");
+  }
   const oauth = validateGitLabOAuthConfig(params.oauthConfig);
-  if (oauth.issuer !== identity.issuer) throw new Error("Managed GitLab issuer changed.");
+  if (oauth.issuer !== identity.issuer) {
+    throw new Error("Managed GitLab issuer changed.");
+  }
   const inspected = await inspectGitLabManagedOAuthRecord(identity.profileId);
   if (
     inspected.state !== "valid" ||
@@ -683,8 +640,9 @@ export async function refreshManagedGitLabProfile(params: {
       assertCurrent: assertClaim,
       allowBot: true,
     });
-    if (!sameActor(actor, current.account))
+    if (!sameActor(actor, current.account)) {
       throw new Error("GitLab refresh returned a different actor.");
+    }
     await assertClaim();
     const next = { ...claimed, tokens, refreshClaim: undefined };
     const profileDir = resolveManagedGitLabProfileDir({ ...params, profileId: identity.profileId });
@@ -703,8 +661,9 @@ export async function refreshManagedGitLabProfile(params: {
               }),
               identity,
             )
-          )
+          ) {
             throw new Error("Managed GitLab selection changed.");
+          }
         },
       },
     );

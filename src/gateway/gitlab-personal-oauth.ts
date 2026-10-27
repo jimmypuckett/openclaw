@@ -9,6 +9,7 @@ import {
   type GitLabOAuthTokens,
 } from "../agents/gitlab-oauth-client.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { parseGitLabOAuthCallback } from "../shared/gitlab-oauth-callback.js";
 import {
   prepareUserGitLabConnection,
   readUserGitLabConnectionAsync,
@@ -128,30 +129,7 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
     complete: (action: PersonalForgeAction, requestId: string, callbackUrl: string) =>
       tracked(async () => {
         const bound = bind(action);
-        let callback: URL;
-        try {
-          callback = new URL(callbackUrl);
-        } catch {
-          throw new Error("GitLab callback is invalid; restart connection.");
-        }
-        const redirect = new URL(bound.config.redirectUri);
-        const codes = callback.searchParams.getAll("code");
-        const states = callback.searchParams.getAll("state");
-        if (
-          callback.origin !== redirect.origin ||
-          callback.pathname !== redirect.pathname ||
-          callback.hash ||
-          callback.username ||
-          callback.password ||
-          codes.length !== 1 ||
-          states.length !== 1 ||
-          !codes[0] ||
-          !states[0] ||
-          callback.searchParams.has("error") ||
-          [...callback.searchParams.keys()].some((key) => key !== "code" && key !== "state")
-        ) {
-          throw new Error("GitLab callback is invalid; restart connection.");
-        }
+        const { code, state } = parseGitLabOAuthCallback(bound.config.redirectUri, callbackUrl);
         const current = await readUserGitLabConnectionAsync(action.owner, bound.config.issuer);
         bound.assertCurrent();
         if (!current?.pending || current.pending.configFingerprint !== fingerprint(bound.config)) {
@@ -163,7 +141,7 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
           bound.config.issuer,
           current.generation,
           requestId,
-          states[0],
+          state,
           () => bound.assertCurrent(),
         );
         const prepared = await prepareUserGitLabConnection(action.owner, bound.config.issuer);
@@ -176,7 +154,7 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
         };
         assertCurrent();
         const tokens = await exchangeGitLabAuthorization(bound.config, {
-          code: codes[0],
+          code,
           verifier: claimed.verifier,
           signal: bound.signal,
           assertCurrent,

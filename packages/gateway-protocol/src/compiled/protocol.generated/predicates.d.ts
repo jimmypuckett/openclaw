@@ -830,6 +830,31 @@ export function isSessionGitLabPublishParams(
 ): value is import("typebox").Static<
   typeof import("../../schema-modules.js").SessionGitLabPublishParamsSchema
 >;
+export function isToolsGitLabStatusParams(
+  value: unknown,
+): value is import("typebox").Static<
+  typeof import("../../schema-modules.js").ToolsGitLabStatusParamsSchema
+>;
+export function isToolsGitLabConfigureParams(
+  value: unknown,
+): value is import("typebox").Static<
+  typeof import("../../schema-modules.js").ToolsGitLabConfigureParamsSchema
+>;
+export function isToolsGitLabAuthorizeStartParams(
+  value: unknown,
+): value is import("typebox").Static<
+  typeof import("../../schema-modules.js").ToolsGitLabAuthorizeStartParamsSchema
+>;
+export function isToolsGitLabAuthorizeCompleteParams(
+  value: unknown,
+): value is import("typebox").Static<
+  typeof import("../../schema-modules.js").ToolsGitLabAuthorizeCompleteParamsSchema
+>;
+export function isToolsGitLabAuthorizeCancelParams(
+  value: unknown,
+): value is import("typebox").Static<
+  typeof import("../../schema-modules.js").ToolsGitLabAuthorizeCancelParamsSchema
+>;
 export function isMessageActionParams(
   value: unknown,
 ): value is import("typebox").Static<

@@ -942,6 +942,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/state/github-publication.worker.test.ts",
   "src/state/user-gitlab-connections.worker.test.ts",
   "src/gateway/server-methods/gitlab.worker.test.ts",
+  "src/gateway/gitlab-managed-oauth.worker.test.ts",
   "src/gateway/gitlab-personal-publication.integration.test.ts",
   "src/gateway/gitlab-personal-publication-store.worker.test.ts",
   "src/state/openclaw-agent-canonical-validation-schema.test.ts",

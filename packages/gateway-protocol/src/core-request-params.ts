@@ -34,6 +34,15 @@ import type * as UsersSchema from "./schema/users.js";
 
 /** Schema-derived payload ownership for statically validated core Gateway methods. */
 export type GatewayCoreRequestParams = {
+  "tools.gitlab.status": Static<typeof GitLabSchema.ToolsGitLabStatusParamsSchema>;
+  "tools.gitlab.configure": Static<typeof GitLabSchema.ToolsGitLabConfigureParamsSchema>;
+  "tools.gitlab.authorize.start": Static<typeof GitLabSchema.ToolsGitLabAuthorizeStartParamsSchema>;
+  "tools.gitlab.authorize.complete": Static<
+    typeof GitLabSchema.ToolsGitLabAuthorizeCompleteParamsSchema
+  >;
+  "tools.gitlab.authorize.cancel": Static<
+    typeof GitLabSchema.ToolsGitLabAuthorizeCancelParamsSchema
+  >;
   "users.gitlab.status": Static<typeof GitLabSchema.UsersGitLabStatusParamsSchema>;
   "users.gitlab.authorize.start": Static<typeof GitLabSchema.UsersGitLabAuthorizeStartParamsSchema>;
   "users.gitlab.authorize.complete": Static<

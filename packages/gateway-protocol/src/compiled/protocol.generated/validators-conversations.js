@@ -74,4 +74,9 @@ export {
   isSessionGitLabStatusParams,
   isSessionGitLabConfirmParams,
   isSessionGitLabPublishParams,
+  isToolsGitLabStatusParams,
+  isToolsGitLabConfigureParams,
+  isToolsGitLabAuthorizeStartParams,
+  isToolsGitLabAuthorizeCompleteParams,
+  isToolsGitLabAuthorizeCancelParams,
 } from "./predicates.js";

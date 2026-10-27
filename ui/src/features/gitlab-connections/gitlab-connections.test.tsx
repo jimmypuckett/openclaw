@@ -42,8 +42,25 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function connectionClient(request: ReturnType<typeof vi.fn>) {
+  return {
+    request: (method: string, params: unknown) =>
+      method.startsWith("tools.gitlab.")
+        ? Promise.resolve({ configured: false })
+        : request(method, params),
+  } as unknown as GatewayBrowserClient;
+}
+function connectionContext(gateway: ApplicationContext["gateway"]): ApplicationContext {
+  return {
+    gateway,
+    settingsAgentSelection: { state: { selectedId: "main" }, subscribe: () => () => {} },
+    agents: { subscribe: () => () => {} },
+    runtimeConfig: { subscribe: () => () => {} },
+  } as unknown as ApplicationContext;
+}
+
 function mount(request: ReturnType<typeof vi.fn>) {
-  const client = { request } as unknown as GatewayBrowserClient;
+  const client = connectionClient(request);
   const initial = {
     client,
     phase: "connected",
@@ -51,7 +68,7 @@ function mount(request: ReturnType<typeof vi.fn>) {
     selfUser: { id: "person-a" },
   } as ApplicationGatewaySnapshot;
   const { gateway, publish } = createApplicationGateway(initial);
-  const context = { gateway } as ApplicationContext;
+  const context = connectionContext(gateway);
   const rendered = mountSolid(GitLabConnections, {
     wrapper: createSolidApplicationContextProvider(context).wrapper,
   });
@@ -91,7 +108,7 @@ it("opens the existing browser authorization when selected from Add provider", a
           expiresAtMs: Date.now() + 60_000,
         },
   );
-  const client = { request } as unknown as GatewayBrowserClient;
+  const client = connectionClient(request);
   const { gateway } = createApplicationGateway({
     client,
     phase: "connected",
@@ -111,7 +128,7 @@ it("opens the existing browser authorization when selected from Add provider", a
         />
       );
     },
-    { wrapper: createSolidApplicationContextProvider({ gateway } as ApplicationContext).wrapper },
+    { wrapper: createSolidApplicationContextProvider(connectionContext(gateway)).wrapper },
   );
   await waitForSolid(() => expect(available).toHaveBeenCalledWith(true));
   connect();
@@ -338,5 +355,56 @@ it("offers verification retry without demanding reconnection during a provider o
   ui.button("Verify")!.click();
   await waitForSolid(() => expect(request).toHaveBeenCalledTimes(2));
   expect(request.mock.calls.every(([method]) => method === "users.gitlab.status")).toBe(true);
+  ui.unmount();
+});
+
+it("uses the native account rows and purpose controls for managed GitLab", async () => {
+  const request = vi.fn(async (method: string, params?: { selectedScope?: string }) => {
+    if (method === "users.gitlab.status") {
+      return disconnected;
+    }
+    if (method === "tools.gitlab.status") {
+      return {
+        configured: true,
+        issuer,
+        selectedScope: params!.selectedScope,
+        selected: null,
+        effective: null,
+        effectiveSource: "unavailable",
+      };
+    }
+    throw new Error("Unexpected synthetic request");
+  });
+  const initial = {
+    client: { request } as unknown as GatewayBrowserClient,
+    phase: "connected",
+    hello: gatewayHelloForMethods([], ["operator.admin"]),
+    selfUser: { id: "administrator-a" },
+  } as ApplicationGatewaySnapshot;
+  const { gateway } = createApplicationGateway(initial);
+  const context = connectionContext(gateway);
+  const ui = mountSolid(GitLabConnections, {
+    wrapper: createSolidApplicationContextProvider(context).wrapper,
+  });
+  const button = (label: string) =>
+    [...ui.container.querySelectorAll("button")].find(
+      (entry) => entry.textContent?.trim() === label,
+    );
+  await waitForSolid(() => expect(button("Change System GitLab")).toBeDefined());
+  expect(ui.container.textContent).toContain("My GitLab");
+  expect(ui.container.textContent).toContain("GitLab for this agent");
+  expect(button("Manage connections")).toBeDefined();
+  expect(button("Verify")).toBeDefined();
+  button("Change System GitLab")!.click();
+  flush();
+  expect(ui.container.textContent).toContain("For the system");
+  expect(ui.container.textContent).toContain("Connect System GitLab");
+  button("Connect My GitLab")!.click();
+  flush();
+  expect(ui.container.textContent).not.toContain("Connect System GitLab");
+  expect(ui.container.textContent).toContain("GitLab authorization");
+  expect(request.mock.calls.some(([method]) => method === "tools.gitlab.authorize.start")).toBe(
+    false,
+  );
   ui.unmount();
 });

@@ -306,3 +306,24 @@ export const validateSessionGitLabPublishParams = createProtocolValidator(
   S.SessionGitLabPublishParamsSchema,
   Checks.isSessionGitLabPublishParams,
 );
+
+export const validateToolsGitLabStatusParams = createProtocolValidator(
+  S.ToolsGitLabStatusParamsSchema,
+  Checks.isToolsGitLabStatusParams,
+);
+export const validateToolsGitLabConfigureParams = createProtocolValidator(
+  S.ToolsGitLabConfigureParamsSchema,
+  Checks.isToolsGitLabConfigureParams,
+);
+export const validateToolsGitLabAuthorizeStartParams = createProtocolValidator(
+  S.ToolsGitLabAuthorizeStartParamsSchema,
+  Checks.isToolsGitLabAuthorizeStartParams,
+);
+export const validateToolsGitLabAuthorizeCompleteParams = createProtocolValidator(
+  S.ToolsGitLabAuthorizeCompleteParamsSchema,
+  Checks.isToolsGitLabAuthorizeCompleteParams,
+);
+export const validateToolsGitLabAuthorizeCancelParams = createProtocolValidator(
+  S.ToolsGitLabAuthorizeCancelParamsSchema,
+  Checks.isToolsGitLabAuthorizeCancelParams,
+);

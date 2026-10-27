@@ -442,6 +442,9 @@ type GatewayResidentBridgeContext = {
     typeof import("../worker-environments/repository-workspace-mutation.js").createRepositoryWorkspaceMutationService
   >;
   githubPublicationService?: import("../github-publication.js").GitHubPublicationCoordinator;
+  gitlabManagedOAuthService?: ReturnType<
+    typeof import("../gitlab-managed-oauth.js").createManagedGitLabOAuthLifecycle
+  >;
   gitlabOAuthService?: ReturnType<
     typeof import("../gitlab-personal-oauth.js").createPersonalGitLabOAuthLifecycle
   >;

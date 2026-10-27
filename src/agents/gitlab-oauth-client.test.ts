@@ -169,17 +169,23 @@ describe("GitLab personal OAuth client", () => {
     const rejected = await refreshGitLabAuthorization(config, {
       refreshToken: "synthetic-refresh-current",
     }).catch((error: unknown) => error);
-    expect(rejected.oauthRefreshOutcome).toMatchObject({
-      outcome: "rejected",
-      reason: "invalid_grant",
-    });
+    expect(rejected).toHaveProperty(
+      "oauthRefreshOutcome",
+      expect.objectContaining({
+        outcome: "rejected",
+        reason: "invalid_grant",
+      }),
+    );
     const uncertain = await refreshGitLabAuthorization(config, {
       refreshToken: "synthetic-refresh-current",
     }).catch((error: unknown) => error);
-    expect(uncertain.oauthRefreshOutcome).toMatchObject({
-      phase: "after-token-response",
-      outcome: "unknown",
-    });
+    expect(uncertain).toHaveProperty(
+      "oauthRefreshOutcome",
+      expect.objectContaining({
+        phase: "after-token-response",
+        outcome: "unknown",
+      }),
+    );
     expect(isRecoverableOAuthRefreshFailure(uncertain)).toBe(false);
   });
 
@@ -210,8 +216,11 @@ describe("GitLab personal OAuth client", () => {
     const failure = await refreshGitLabAuthorization(config, {
       refreshToken: "synthetic-refresh-current",
     }).catch((error: unknown) => error);
-    expect(failure.message).toBe("GitLab OAuth token refresh failed");
-    expect(failure.oauthRefreshOutcome).toMatchObject({ outcome: "unknown" });
+    expect(failure).toHaveProperty("message", "GitLab OAuth token refresh failed");
+    expect(failure).toHaveProperty(
+      "oauthRefreshOutcome",
+      expect.objectContaining({ outcome: "unknown" }),
+    );
   });
 
   it("permits a later attempt only when authority failed before refresh dispatch", async () => {
