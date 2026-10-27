@@ -309,6 +309,41 @@ it("enforces current administrator authority through registered managed-connecti
         cancelled: true,
       });
       expect(await readGitLabManagedSetupRecord(requestId)).toBeUndefined();
+      const next = (
+        await rpc(clients[0]!, "tools.gitlab.authorize.start", {
+          scope: "system",
+          agentId: "main",
+        })
+      )[1] as { requestId: string; authorizationUrl: string };
+      let releaseToken!: (response: Response) => void;
+      const tokenResponse = new Promise<Response>((resolve) => {
+        releaseToken = resolve;
+      });
+      const fetcher = vi.fn<typeof fetch>().mockReturnValue(tokenResponse);
+      vi.stubGlobal("fetch", fetcher);
+      const callback = new URL(config.gateway!.gitlab!.redirectUri);
+      callback.searchParams.set("code", "synthetic-code");
+      callback.searchParams.set("state", new URL(next.authorizationUrl).searchParams.get("state")!);
+      const completing = rpc(clients[0]!, "tools.gitlab.authorize.complete", {
+        requestId: next.requestId,
+        callbackUrl: callback.toString(),
+      });
+      try {
+        await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+        setUserProfileRole(clients[0]!.authenticatedUserProfile!.profileId, "member");
+      } finally {
+        releaseToken(
+          Response.json({
+            access_token: "synthetic-access",
+            refresh_token: "synthetic-refresh",
+            token_type: "bearer",
+            expires_in: 7200,
+          }),
+        );
+      }
+      expect((await completing)[0]).toBe(false);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(config.tools?.gitlab).toBeUndefined();
     } finally {
       await service.stop();
       catalog.release();

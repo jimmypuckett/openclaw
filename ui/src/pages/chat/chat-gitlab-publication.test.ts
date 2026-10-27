@@ -262,3 +262,90 @@ describe("native GitLab publication", () => {
     expect(binding.view()?.selection).toBeNull();
   });
 });
+
+it("publishes through an explicitly chosen managed GitLab actor and never falls back after a user credential failure", async () => {
+  const shared = {
+    source: "system-configured" as const,
+    accountId: 77,
+    login: "configured-publisher",
+  };
+  const options = {
+    issuer: "https://gitlab.example.test",
+    target: { repository: "group/project", branch: "feature/one", baseBranch: "master" },
+    shared,
+    personal: {
+      state: "connected",
+      generation,
+      account,
+      accessExpiresAtMs: null,
+      refreshState: "available",
+      pending: null,
+    },
+    pendingPersonal: null,
+    latestShared: null,
+  };
+  let failPersonal = false;
+  const request = vi.fn(async (method: string, params?: { selection?: { source: string } }) => {
+    if (method === "sessions.gitlab.options") {
+      return options;
+    }
+    if (method === "sessions.gitlab.publish") {
+      if (params?.selection?.source === "personal" && failPersonal) {
+        throw new Error("Synthetic user credential unavailable");
+      }
+      return {
+        requestId,
+        status: "published",
+        url: "https://gitlab.example.test/group/project/-/merge_requests/42",
+        repository: "group/project",
+        branch: "feature/one",
+        headCommit: "a".repeat(40),
+        publisher: shared,
+      };
+    }
+    throw new Error("Unexpected synthetic method");
+  });
+  const create = () => {
+    const owner = new GitHubPublicationOwner(
+      {
+        client: { request: request as unknown as GatewayBrowserClient["request"] },
+        target: { sessionKey: "agent:main:one", agentId: "main" },
+        isCurrent: () => true,
+        reserve: () => {},
+        release: () => {},
+        unbound: () => {},
+      },
+      "gitlab",
+    );
+    const binding = owner.bind();
+    binding.sync({
+      canPublishShared: true,
+      canPublishPersonal: true,
+      personalReady: true,
+      isPresented: () => true,
+      isCurrent: () => true,
+    });
+    return { owner, binding };
+  };
+  const managed = create();
+  await vi.waitFor(() => expect(managed.binding.view()?.activity).toBeNull());
+  managed.binding.view()!.onSelect?.("shared");
+  await managed.binding.view()!.onPublish?.();
+  expect(request).toHaveBeenCalledWith(
+    "sessions.gitlab.publish",
+    expect.objectContaining({ selection: { source: "shared", expected: shared } }),
+  );
+  expect(managed.binding.view()?.result?.publisher).toEqual(shared);
+  managed.owner.reset();
+  request.mockClear();
+  failPersonal = true;
+  const personal = create();
+  await vi.waitFor(() => expect(personal.binding.view()?.activity).toBeNull());
+  personal.binding.view()!.onSelect?.("personal");
+  await personal.binding.view()!.onPublish?.();
+  const writes = request.mock.calls.filter(([method]) => method === "sessions.gitlab.publish");
+  expect(writes).toHaveLength(1);
+  expect(writes[0]![1]).toMatchObject({ selection: { source: "personal", account, generation } });
+  expect(personal.binding.view()?.selection?.source).toBe("personal");
+  personal.owner.reset();
+});
