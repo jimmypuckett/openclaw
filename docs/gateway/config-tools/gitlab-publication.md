@@ -26,7 +26,7 @@ an optional project restriction:
     gitlab: {
       issuer: "https://gitlab.example.com",
       clientId: "YOUR_PUBLIC_APPLICATION_ID",
-      redirectUri: "https://gateway.example.com/oauth/gitlab",
+      redirectUri: "https://gateway.example.com/oauth/gitlab/callback",
       // Optional: restrict publication to these numeric project IDs.
       // Omit to use the connected user's normal GitLab project access.
       projects: [17],
@@ -35,11 +35,13 @@ an optional project restriction:
 }
 ```
 
-The redirect page must let the user retain the complete returned URL. In
-**Settings → Profile → Git connections → Add provider**, choose **GitLab**,
-complete authorization in the browser, and paste the returned URL into the
-protected connection form. The request is bound to the initiating user and can
-be completed once. Reconnect when refresh fails.
+Use the Gateway's `/oauth/gitlab/callback` path (prefixed by the Control UI base
+path when configured). In **Settings → Profile → Git connections → Add provider**,
+choose **GitLab** and authorize in GitLab. The callback returns to Profile and
+completes the connection through the authenticated Gateway automatically. The
+code and state are removed from the browser URL before ordinary routing starts;
+tokens and the PKCE verifier stay server-side. The pending request is bound to
+the initiating user and can be completed once. Reconnect when refresh fails.
 
 ## Publish from a session
 

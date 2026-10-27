@@ -603,15 +603,6 @@ export function ProfilePage() {
                 } else {
                   setGitlabConnectRequest((value) => value + 1);
                 }
-                const selector =
-                  provider === "github"
-                    ? '[data-github-connection="personal"]'
-                    : '[data-gitlab-connections="personal"]';
-                queueMicrotask(() =>
-                  document
-                    .querySelector<HTMLElement>(selector)
-                    ?.scrollIntoView?.({ block: "nearest" }),
-                );
               }}
             >
               <GitHubConnections connectRequest={githubConnectRequest()} />

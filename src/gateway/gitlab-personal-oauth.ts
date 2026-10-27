@@ -78,6 +78,7 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
     return {
       configured: true,
       issuer: bound.config.issuer,
+      pendingRequestId: record?.pending?.requestId,
       connected: selected?.kind === "connected" && !selected.refresh && !selected.refreshFailure,
       account: selected?.kind === "connected" ? selected.account : null,
       scopes: selected?.kind === "connected" ? selected.tokens.scopes : [],

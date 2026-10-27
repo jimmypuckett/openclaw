@@ -11,6 +11,7 @@ import {
 } from "../../test-helpers/solid-application-context.tsx";
 import { flush, waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { GitLabConnections } from "./gitlab-connections.tsx";
+import { captureGitLabOAuthCallback, takeGitLabOAuthCallback } from "./gitlab-oauth-callback.ts";
 
 const issuer = "https://gitlab.example.test";
 const account = {
@@ -142,49 +143,65 @@ it("shows the verified personal publisher and disconnects without a fallback", a
   ui.unmount();
 });
 
-it("starts a browser authorization and clears the concealed final redirect after completion", async () => {
-  const pending = {
-    requestId: "a624ff9e-4018-4f6a-aab7-88c619d5d03b",
-    authorizationUrl: `${issuer}/oauth/authorize?client_id=test&state=opaque`,
-    expiresAtMs: Date.now() + 60_000,
-  };
-  const request = vi.fn(async (method: string) => {
-    if (method === "users.gitlab.status") {
-      return disconnected;
-    }
-    if (method === "users.gitlab.authorize.start") {
-      return pending;
-    }
-    return connected;
-  });
+it("uses the Gateway-generated sign-in URL without a pasted-code form", async () => {
+  const authorizationUrl = `${issuer}/oauth/authorize?client_id=test&state=opaque`;
+  const request = vi.fn(async (method: string) =>
+    method === "users.gitlab.status"
+      ? disconnected
+      : {
+          requestId: "a624ff9e-4018-4f6a-aab7-88c619d5d03b",
+          authorizationUrl,
+          expiresAtMs: Date.now() + 60_000,
+        },
+  );
   const ui = mount(request);
   await waitForSolid(() => expect(ui.button("Connect GitLab")).toBeDefined());
   ui.button("Connect GitLab")?.click();
   await waitForSolid(() =>
-    expect(
-      ui.container.querySelector<HTMLAnchorElement>("a[href*='/oauth/authorize']"),
-    ).not.toBeNull(),
+    expect(ui.container.querySelector("a[href*='/oauth/authorize']")).not.toBeNull(),
   );
-  const link = ui.container.querySelector<HTMLAnchorElement>("a[href*='/oauth/authorize']")!;
-  expect(link.href).toBe(pending.authorizationUrl);
-  expect(link.rel).toContain("noopener");
-  const input = ui.container.querySelector<HTMLInputElement>(
-    "input[aria-label='Final GitLab redirect URL']",
-  )!;
-  expect(input.type).toBe("password");
-  const callbackUrl = "https://app.example.test/oauth/callback?code=secret&state=opaque";
-  input.value = callbackUrl;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  flush();
-  ui.button("Finish GitLab connection")?.click();
-  expect(input.value).toBe("");
+  expect(ui.container.querySelector<HTMLAnchorElement>("a[href*='/oauth/authorize']")!.href).toBe(
+    authorizationUrl,
+  );
+  expect(ui.container.querySelector("input[aria-label='Final GitLab redirect URL']")).toBeNull();
+  expect(ui.container.textContent).toContain("automatically");
+  ui.unmount();
+});
+
+it("completes the returned callback in a fresh authenticated Profile mount", async () => {
+  const requestId = "a624ff9e-4018-4f6a-aab7-88c619d5d03b";
+  const callbackUrl = "https://app.example.test/oauth/gitlab/callback?code=synthetic&state=opaque";
+  captureGitLabOAuthCallback(
+    { pathname: "/oauth/gitlab/callback", search: "?code=synthetic&state=opaque", hash: "" },
+    "",
+    "https://app.example.test",
+  );
+  const request = vi.fn(async (method: string) =>
+    method === "users.gitlab.status" ? { ...disconnected, pendingRequestId: requestId } : connected,
+  );
+  const ui = mount(request);
   await waitForSolid(() =>
     expect(ui.container.textContent).toContain("GitLab publications use @alice"),
   );
   expect(request).toHaveBeenCalledWith("users.gitlab.authorize.complete", {
-    requestId: pending.requestId,
+    requestId,
     callbackUrl,
   });
+  expect(request).not.toHaveBeenCalledWith("users.gitlab.authorize.start", {});
+  expect(takeGitLabOAuthCallback()).toBeNull();
+  ui.unmount();
+});
+
+it("shows a recoverable error when the returned request is unavailable for the current person", async () => {
+  captureGitLabOAuthCallback(
+    { pathname: "/oauth/gitlab/callback", search: "?code=synthetic&state=foreign", hash: "" },
+    "",
+    "https://app.example.test",
+  );
+  const request = vi.fn(async () => disconnected);
+  const ui = mount(request);
+  await waitForSolid(() => expect(ui.container.textContent).toContain("expired or changed"));
+  expect(request.mock.calls.every(([method]) => method === "users.gitlab.status")).toBe(true);
   ui.unmount();
 });
 
@@ -223,34 +240,24 @@ it("drops late status and authorization after the profile changes", async () => 
   ui.unmount();
 });
 
-it("clears the final redirect and ignores late completion when the client changes", async () => {
+it("consumes the callback and ignores late completion when the client changes", async () => {
   const complete = deferred<typeof connected>();
-  const pending = {
-    requestId: "a624ff9e-4018-4f6a-aab7-88c619d5d03b",
-    authorizationUrl: `${issuer}/oauth/authorize?state=opaque`,
-    expiresAtMs: Date.now() + 60_000,
-  };
-  const request = vi.fn((method: string) => {
-    if (method === "users.gitlab.status") {
-      return Promise.resolve(disconnected);
-    }
-    if (method === "users.gitlab.authorize.start") {
-      return Promise.resolve(pending);
-    }
-    return complete.promise;
-  });
-  const ui = mount(request);
-  await waitForSolid(() => expect(ui.button("Connect GitLab")).toBeDefined());
-  ui.button("Connect GitLab")?.click();
-  await waitForSolid(() =>
-    expect(ui.container.querySelector<HTMLInputElement>("input[type='password']")).not.toBeNull(),
+  const requestId = "a624ff9e-4018-4f6a-aab7-88c619d5d03b";
+  captureGitLabOAuthCallback(
+    { pathname: "/oauth/gitlab/callback", search: "?code=synthetic&state=opaque", hash: "" },
+    "",
+    "https://app.example.test",
   );
-  const input = ui.container.querySelector<HTMLInputElement>("input[type='password']")!;
-  input.value = "https://app.example.test/oauth/callback?code=secret&state=opaque";
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  flush();
-  ui.button("Finish GitLab connection")?.click();
-  expect(input.value).toBe("");
+  const request = vi.fn((method: string) =>
+    method === "users.gitlab.status"
+      ? Promise.resolve({ ...disconnected, pendingRequestId: requestId })
+      : complete.promise,
+  );
+  const ui = mount(request);
+  await waitForSolid(() =>
+    expect(request).toHaveBeenCalledWith("users.gitlab.authorize.complete", expect.anything()),
+  );
+  expect(takeGitLabOAuthCallback()).toBeNull();
   ui.emit({
     client: {
       request: vi.fn(async () => ({ configured: false })),

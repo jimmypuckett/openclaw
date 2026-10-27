@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onSettled, Show } from "solid-js";
+import { createEffect, createMemo, onSettled, Show } from "solid-js";
 import {
   SettingsRow,
   SettingsSection,
@@ -20,15 +20,6 @@ export function GitLabConnections(
   const state = new GitLabConnectionsState();
   const projection = projectOwner(state, (owner) => owner.view);
   const view = createMemo(() => projection.read());
-  const [callbackUrl, setCallbackUrl] = createSignal("");
-  let callbackInput: HTMLInputElement | undefined;
-
-  const clearCallback = () => {
-    setCallbackUrl("");
-    if (callbackInput) {
-      callbackInput.value = "";
-    }
-  };
   createEffect(
     () => view().eligible && view().status?.configured === true,
     (available) => {
@@ -39,32 +30,22 @@ export function GitLabConnections(
     () => ({ request: props.connectRequest ?? 0, configured: view().status?.configured }),
     ({ request, configured }, previous) => {
       if (request > 0 && request !== previous?.request && configured) {
-        clearCallback();
         void state.start();
       }
     },
   );
   onSettled(() => {
     const sync = (snapshot: typeof context.gateway.snapshot) => {
-      if (state.sync(snapshot)) {
-        clearCallback();
-      }
+      state.sync(snapshot);
     };
     const unsubscribe = context.gateway.subscribe(sync);
     sync(context.gateway.snapshot);
     return () => {
       unsubscribe();
-      clearCallback();
+
       state.dispose();
     };
   });
-
-  const complete = (event: SubmitEvent) => {
-    event.preventDefault();
-    const value = callbackUrl();
-    clearCallback();
-    void state.complete(value);
-  };
 
   return (
     <Show when={view().eligible && (view().status?.configured || view().error)}>
@@ -79,7 +60,6 @@ export function GitLabConnections(
                 class="btn btn--sm"
                 disabled={view().busy}
                 onClick={() => {
-                  clearCallback();
                   void state.loadStatus();
                 }}
               >
@@ -143,14 +123,13 @@ export function GitLabConnections(
             </Show>
             <SettingsRow
               title="Authorization"
-              description="Sign in through GitLab, then paste the full final redirect URL below."
+              description="Sign in through GitLab. You will return here to finish connecting automatically."
               control={
                 <button
                   type="button"
                   class="btn btn--sm"
                   disabled={view().busy}
                   onClick={() => {
-                    clearCallback();
                     void state.start();
                   }}
                 >
@@ -175,29 +154,7 @@ export function GitLabConnections(
               />
               <SettingsRow
                 title="Finish connection"
-                description="Paste the complete URL from your browser after GitLab redirects you. It is cleared from this field when submitted."
-                stacked
-                control={
-                  <form onSubmit={complete}>
-                    <input
-                      ref={(element) => (callbackInput = element)}
-                      class="settings-input"
-                      type="password"
-                      autocomplete="off"
-                      spellcheck="false"
-                      aria-label="Final GitLab redirect URL"
-                      value={callbackUrl()}
-                      onInput={(event) => setCallbackUrl(event.currentTarget.value)}
-                    />
-                    <button
-                      type="submit"
-                      class="btn btn--sm"
-                      disabled={view().busy || !callbackUrl().trim()}
-                    >
-                      Finish GitLab connection
-                    </button>
-                  </form>
-                }
+                description="After authorizing in GitLab, the returned Profile page completes your connection automatically. Refresh this page to see the connected account."
               />
             </Show>
             <Show when={view().status?.connected || view().pending}>
@@ -210,7 +167,6 @@ export function GitLabConnections(
                     class="btn btn--sm"
                     disabled={view().busy}
                     onClick={() => {
-                      clearCallback();
                       void state.disconnect();
                     }}
                   >

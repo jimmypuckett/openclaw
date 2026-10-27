@@ -1,11 +1,13 @@
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorReadAccess } from "../../app/operator-access.ts";
+import { takeGitLabOAuthCallback } from "./gitlab-oauth-callback.ts";
 
 export type GitLabConnectionStatus = {
   configured: boolean;
   issuer?: string;
   connected?: boolean;
+  pendingRequestId?: string;
   account?: {
     accountId: number;
     login: string;
@@ -124,6 +126,12 @@ export class GitLabConnectionsState {
         return;
       }
       this.view = { ...this.view, loading: false, status };
+      const callbackUrl = takeGitLabOAuthCallback();
+      if (callbackUrl) {
+        this.publish();
+        await this.complete(callbackUrl);
+        return;
+      }
     } catch {
       if (!this.current(client, generation, sequence)) {
         return;
@@ -179,8 +187,16 @@ export class GitLabConnectionsState {
 
   async complete(callbackUrl: string) {
     const client = this.client;
-    const pending = this.view.pending;
-    if (!client || !pending || this.view.busy || !callbackUrl.trim()) {
+    const requestId = this.view.pending?.requestId ?? this.view.status?.pendingRequestId;
+    if (!client || this.view.busy || !callbackUrl.trim()) {
+      return;
+    }
+    if (!requestId) {
+      this.view = {
+        ...this.view,
+        error: "GitLab sign-in expired or changed. Connect GitLab again.",
+      };
+      this.publish();
       return;
     }
     const generation = this.generation;
@@ -190,7 +206,7 @@ export class GitLabConnectionsState {
     try {
       const status = await client.request<GitLabConnectionStatus>(
         "users.gitlab.authorize.complete",
-        { requestId: pending.requestId, callbackUrl: callbackUrl.trim() },
+        { requestId, callbackUrl: callbackUrl.trim() },
       );
       if (!this.current(client, generation, sequence)) {
         return;

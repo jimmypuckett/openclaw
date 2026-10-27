@@ -107,6 +107,13 @@ it("links two humans through registered RPC, rejects cross-person/replayed callb
       const first = await rpc(clients[0]!, "users.gitlab.authorize.start");
       expect(first[0]).toBe(true);
       const started = first[1] as { requestId: string; authorizationUrl: string };
+      expect((await rpc(clients[0]!, "users.gitlab.status"))[1]).toMatchObject({
+        pendingRequestId: started.requestId,
+      });
+      expect((await rpc(clients[1]!, "users.gitlab.status"))[1]).not.toHaveProperty(
+        "pendingRequestId",
+        started.requestId,
+      );
       const callbackUrl = `${config.gateway!.gitlab!.redirectUri}?code=alice-code&state=${new URL(started.authorizationUrl).searchParams.get("state")}`;
       expect(
         (
