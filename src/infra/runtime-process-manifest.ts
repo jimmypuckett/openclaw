@@ -1,5 +1,5 @@
-import { runtimeProcessHelperManifest } from "./runtime-process-helper-manifest.js";
-export { runtimeProcessHelperManifest } from "./runtime-process-helper-manifest.js";
+import { runtimeProcessHelperManifest } from "./runtime-process-helper-manifest.ts";
+export { runtimeProcessHelperManifest } from "./runtime-process-helper-manifest.ts";
 
 // Keep subprocess metadata independent of executable launcher declarations.
 export function createRuntimeProcessEntrypoints(currentModuleUrl: string) {

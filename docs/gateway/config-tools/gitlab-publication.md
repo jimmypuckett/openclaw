@@ -1,5 +1,5 @@
 ---
-summary: "Connect a GitLab account with per-user OAuth for managed-session publication"
+summary: "Connect GitLab accounts for user publication and managed agent operations"
 read_when:
   - Configuring GitLab publication
   - Understanding GitLab publication identity and recovery
@@ -7,11 +7,12 @@ read_when:
 
 # GitLab connections and publication
 
-GitLab publication uses a connected human account selected in the session's
-publication flow. Credentials stay on the Gateway. Each user connects their own
-account; another participant's connection cannot authorize publication for them.
-A missing, expired or disconnected user connection does not fall back to a
-shared account or an ambient CLI token.
+GitLab follows the GitHub connection model: **My GitLab** belongs to the signed-in
+user, **System GitLab** is an administrator-configured default, and an agent can
+have an explicit override. The publication controls identify the selected account.
+Credentials stay on the Gateway. Another participant's user connection cannot
+authorize publication for you. A missing, expired or disconnected selected
+connection does not fall back to a shared account or an ambient CLI token.
 
 ## Configure the Gateway
 
@@ -41,31 +42,50 @@ choose **GitLab** and authorize in GitLab. The callback returns to Profile and
 completes the connection through the authenticated Gateway automatically. The
 code and state are removed from the browser URL before ordinary routing starts;
 tokens and the PKCE verifier stay server-side. The pending request is bound to
-the initiating user and can be completed once. Reconnect when refresh fails.
+the initiating user and can be completed once. Use **Manage connections** to
+choose **For me** or, with administrator access, **For the system**. Use **Verify**
+to check the selected account. Agent overrides are managed in the agent's Tools
+settings. Managed setup is bound to its administrator and exact target; changing
+that target or losing administrator access prevents activation. Reconnect when
+refresh cannot safely continue. If the completion result is uncertain, verify
+the selected connection before starting another authorization.
 
 ## Publish from a session
 
 The session must have a locally managed publication worktree and a canonical
 HTTPS `origin` on the configured issuer, ending in `.git`. The repository must
-resolve to the exact canonical project using the connected user's access. The repository remote selects the provider;
-changing a branch does not change the provider or destination project.
+resolve to the exact canonical project using the selected account's access. The
+repository remote selects the provider; changing a branch does not change the
+provider or destination project.
 
-Publication records the selected human publisher, creates the Git commit with
-their verified GitLab commit identity, and checks the remote branch SHA. An
+Publication records the selected publisher, creates the Git commit with that
+account's verified GitLab commit identity, and checks the remote branch SHA. An
 existing merge request retains its original author; the current publisher is
 reported separately. Accepted requests retain their identity and idempotency key.
 After an interrupted or uncertain remote operation, recover that request before
 starting a replacement. Disconnecting does not erase completed publication
-status or transfer accepted requests to another user.
+status or transfer accepted requests to another user. A managed publication also
+pins its System or agent source, profile and account generation. Replacing a
+selection cannot transfer recovery to a new profile, even for the same account.
 
 ## Issue skills and other GitLab operations
 
-This connection authorizes browser-selected publication. It does not sign the
-agent's shell into GitLab or supply tokens to issue skills. Ordinary GitLab CLI
-skills use their independently configured credentials and must verify the actual
-actor and explicit repository before acting. A request for a personal identity
-must stop when that identity is unavailable. Do not copy browser tokens into CLI
-configuration or silently substitute another account.
+My GitLab authorizes browser-selected publication and does not supply its token
+to the agent's shell. Issue and other CLI skills use the explicitly configured
+System GitLab account or agent override. The Gateway verifies and refreshes that
+managed account before launch. The selected token is loaded at the child-process
+boundary and is excluded from the supervising environment and approval data.
+An unavailable selected profile fails closed. Skills must verify the actual actor
+and explicit repository before acting; they must stop when a requested account
+is unavailable.
 
-This feature does not add cross-repository issue orchestration or a shared GitLab
-publication account configuration.
+Like native GitHub CLI integration, an authorized shell has the selected account's
+CLI authority. The shell is not an issuer-confined API boundary, and the optional
+publication project restriction does not constrain arbitrary CLI commands. Shared
+sandboxes cannot receive managed profiles. A private agent/session sandbox needs
+an explicit `allowInSandbox` opt-in and receives the selected profile read-only.
+Gateway profiles and tokens are not forwarded to a remote node.
+
+This feature does not add cross-repository issue orchestration. An unconfigured
+shell retains ordinary CLI behavior; connecting My GitLab does not silently
+configure that shell or replace another provider's credentials.

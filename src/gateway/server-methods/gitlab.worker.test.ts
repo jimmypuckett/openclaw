@@ -194,11 +194,8 @@ it("links two humans through registered RPC, rejects cross-person/replayed callb
         false,
         undefined,
         expect.objectContaining({
-          code: "UNAVAILABLE",
-          details: {
-            code: "GITLAB_PUBLICATION_SELECTION_REJECTED",
-            idempotencyKey: "rejected-shared-selection",
-          },
+          code: "FORBIDDEN",
+          message: "GitLab publication session was not found.",
         }),
       ]);
       expect(fetcher).not.toHaveBeenCalled();

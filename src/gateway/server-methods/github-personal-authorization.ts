@@ -106,6 +106,7 @@ export async function prepareGitHubPublicationOptionsRead(
     >,
   { sessionKey, agentId: requestedAgentId }: SessionMutationTarget,
   signal?: AbortSignal,
+  label: "GitHub" | "GitLab" = "GitHub",
 ) {
   const authority = readGatewayRequestMutationAuthority(options);
   const client = options.client;
@@ -120,7 +121,7 @@ export async function prepareGitHubPublicationOptionsRead(
       client?.authenticatedUserId !== userId ||
       client?.internal?.operatorAccessAuthority !== access
     ) {
-      throw new Error("GitHub profile changed; retry publication options.");
+      throw new Error(`${label} profile changed; retry publication options.`);
     }
   };
   assertConnection();
@@ -135,7 +136,7 @@ export async function prepareGitHubPublicationOptionsRead(
   const currentClient = () => {
     assertConnection();
     if (profile && !profile.isCurrent()) {
-      throw new Error("GitHub profile changed; retry publication options.");
+      throw new Error(`${label} profile changed; retry publication options.`);
     }
     return currentGitHubClient(options, "operator.sessions.read", profile);
   };
@@ -172,7 +173,7 @@ export async function prepareGitHubPublicationOptionsRead(
     };
     const session = readSession();
     if (!session) {
-      throw new Error("GitHub publication session was not found.");
+      throw new Error(`${label} publication session was not found.`);
     }
     // Archive and access changes invalidate the prepared response through write receipts.
     const readCurrent = () => {
@@ -182,7 +183,7 @@ export async function prepareGitHubPublicationOptionsRead(
         current.sessionId !== session.sessionId ||
         current.lifecycleRevision !== session.lifecycleRevision
       ) {
-        throw new Error("GitHub publication session access changed; select the session again.");
+        throw new Error(`${label} publication session access changed; select the session again.`);
       }
       return current;
     };
@@ -201,7 +202,7 @@ export async function prepareGitHubPublicationOptionsRead(
       assertSessionUnchanged: (snapshot: ReturnType<typeof readCurrent>): void => {
         const current = readCurrent();
         if (current.archivedAt !== snapshot.archivedAt) {
-          throw new Error("GitHub publication session access changed; select the session again.");
+          throw new Error(`${label} publication session access changed; select the session again.`);
         }
       },
     };
@@ -224,7 +225,7 @@ export async function preparePersonalGitLabPublicationOptionsRead(
   target: SessionMutationTarget,
   signal?: AbortSignal,
 ) {
-  const read = await prepareGitHubPublicationOptionsRead(options, target, signal);
+  const read = await prepareGitHubPublicationOptionsRead(options, target, signal, "GitLab");
   try {
     const session = read.currentSession();
     const personal =
@@ -324,7 +325,7 @@ export async function bindPersonalForgeSessionAction(
   try {
     const initial = prepared.readCurrent();
     if (!initial.entry?.sessionId) {
-      throw new Error("GitHub publication session was not found.");
+      throw new Error(`${label} publication session was not found.`);
     }
     const { authorization, error } = await resolveSessionMutationAuthorizationAsync({
       client: currentGitHubClient(options, "operator.write", action.owner, label),
