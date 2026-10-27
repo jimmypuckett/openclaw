@@ -5,7 +5,12 @@ import {
   type SessionGitLabPublicationResult,
 } from "../../packages/gateway-protocol/src/schema/gitlab.js";
 import type { PersonalForgePublicationActionV2 } from "./forge-personal-publication-custody.js";
-import type { PersonalGitLabCredential } from "./gitlab-personal-oauth.js";
+import {
+  managedGitLabPublicationGeneration,
+  publicationPublisher,
+  sameGitLabPublicationPublisher,
+  type GitLabPublicationCredential,
+} from "./gitlab-personal-publication-identity.js";
 import {
   personalGitLabRequestDigest,
   type PersonalGitLabPublicationRow,
@@ -33,6 +38,16 @@ export const gitLabPublicationReceiptSchema = z.object({
   repositoryRoot: z.string(),
   repositoryFingerprint: z.string(),
   actor: z.object({ accountId: z.number().int().positive(), login: z.string() }),
+  publisher: z
+    .discriminatedUnion("source", [
+      z.strictObject({ source: z.literal("personal") }),
+      z.strictObject({
+        source: z.enum(["system-configured", "agent-override"]),
+        profileId: z.string().regex(/^glp_[a-f0-9]{32}$/u),
+        recordCreatedAtMs: z.number().int().nonnegative().safe(),
+      }),
+    ])
+    .optional(),
   title: z.string(),
   description: z.string(),
   draft: z.boolean(),
@@ -48,6 +63,7 @@ export type AcceptedGitLabPublication = z.infer<typeof gitLabPublicationReceiptS
 
 export function readAcceptedGitLabPublication(row: PersonalGitLabPublicationRow) {
   const saved = gitLabPublicationReceiptSchema.parse(JSON.parse(row.receipt_json));
+  const publisher = publicationPublisher(saved.publisher);
   if (
     row.request_digest !== personalGitLabRequestDigest(row) ||
     row.issuer !== saved.target.issuer ||
@@ -60,7 +76,15 @@ export function readAcceptedGitLabPublication(row: PersonalGitLabPublicationRow)
     row.worktree_id !== saved.worktreeId ||
     row.repository_fingerprint !== saved.repositoryFingerprint ||
     row.branch !== saved.branch ||
-    row.created_at_ms !== saved.createdAtMs
+    row.created_at_ms !== saved.createdAtMs ||
+    (publisher.source !== "personal" &&
+      row.connection_generation !==
+        managedGitLabPublicationGeneration({
+          publisher,
+          issuer: row.issuer,
+          accountId: row.identity_account_id,
+          login: row.identity_login,
+        }))
   ) {
     throw new Error("The accepted GitLab publication receipt is inconsistent.");
   }
@@ -69,12 +93,15 @@ export function readAcceptedGitLabPublication(row: PersonalGitLabPublicationRow)
 
 export function createPersonalGitLabPublicationRow(params: {
   action: PersonalForgePublicationActionV2;
-  credential: PersonalGitLabCredential;
+  credential: GitLabPublicationCredential;
   requestId: string;
   idempotencyKey: string;
   saved: AcceptedGitLabPublication;
 }): PersonalGitLabPublicationRow {
   const { action, credential, saved } = params;
+  if (!sameGitLabPublicationPublisher(saved.publisher, credential.publisher)) {
+    throw new Error("GitLab publication source changed before acceptance.");
+  }
   const row: PersonalGitLabPublicationRow = {
     request_id: params.requestId,
     owner_profile_id: action.owner,
@@ -114,9 +141,9 @@ export function createPersonalGitLabPublicationRow(params: {
 export function projectPersonalGitLabTerminalResult(
   row: PersonalGitLabPublicationRow,
 ): SessionGitLabPublicationResult {
-  readAcceptedGitLabPublication(row);
+  const saved = readAcceptedGitLabPublication(row);
   const publisher = {
-    source: "personal" as const,
+    source: publicationPublisher(saved.publisher).source,
     accountId: row.identity_account_id,
     login: row.identity_login,
   };

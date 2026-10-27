@@ -1,15 +1,23 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
 } from "../infra/kysely-sync.js";
 import type { EngineConnection } from "../infra/sql-connection.js";
+import { readHiddenGitLabSecretInDatabase } from "../secrets/store/secret-store-hidden-managed-gitlab.kernel.js";
 import { githubPublicationReceipts } from "../state/github-publication-receipts.js";
 import { ensurePersonalGitLabPublicationSchema } from "../state/openclaw-state-db-schema-additive.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB } from "../state/openclaw-state-db.generated.js";
 import type { OpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { readUserGitLabConnectionInDatabase } from "../state/user-gitlab-connections.kernel.js";
+import {
+  managedGitLabPublicationGeneration,
+  publicationPublisher,
+  type GitLabPublicationPublisher,
+} from "./gitlab-personal-publication-identity.js";
+import { gitLabPublicationReceiptSchema } from "./gitlab-personal-publication-row.js";
 import {
   personalGitLabRequestDigest,
   type PersonalGitLabPublicationRow,
@@ -28,13 +36,27 @@ function checked(row: PersonalGitLabPublicationRow): PersonalGitLabPublicationRo
   } catch {
     throw new Error("Personal GitLab publication accepted checkpoint is invalid.");
   }
-  const object = (value: unknown): value is Record<string, unknown> =>
-    typeof value === "object" && value !== null && !Array.isArray(value);
+  const object = isRecord;
+  const parsedPublisher = object(receipt)
+    ? gitLabPublicationReceiptSchema.shape.publisher.safeParse(receipt.publisher)
+    : null;
+  const publisher = parsedPublisher?.success
+    ? publicationPublisher(parsedPublisher.data)
+    : undefined;
   if (
     !object(receipt) ||
     !object(receipt.target) ||
     !object(receipt.actor) ||
     !object(receipt.sessionIdentity) ||
+    !publisher ||
+    (publisher.source !== "personal" &&
+      row.connection_generation !==
+        managedGitLabPublicationGeneration({
+          publisher,
+          issuer: row.issuer,
+          accountId: row.identity_account_id,
+          login: row.identity_login,
+        })) ||
     receipt.target.issuer !== row.issuer ||
     !Number.isInteger(receipt.target.projectId) ||
     Number(receipt.target.projectId) <= 0 ||
@@ -62,7 +84,52 @@ function checked(row: PersonalGitLabPublicationRow): PersonalGitLabPublicationRo
   return row;
 }
 
+function receiptPublisher(row: PersonalGitLabPublicationRow): GitLabPublicationPublisher {
+  const parsed: unknown = JSON.parse(row.receipt_json);
+  if (!isRecord(parsed)) {
+    throw new Error("GitLab publication receipt is invalid.");
+  }
+  return publicationPublisher(
+    gitLabPublicationReceiptSchema.shape.publisher.parse(parsed.publisher),
+  );
+}
+
 function assertConnection(db: EngineConnection, row: PersonalGitLabPublicationRow): void {
+  const publisher = receiptPublisher(row);
+  if (publisher.source !== "personal") {
+    const raw = readHiddenGitLabSecretInDatabase(
+      db,
+      `gitlab-oauth-${publisher.profileId.slice(4)}`,
+      Date.now(),
+    );
+    let record: unknown;
+    try {
+      record = raw ? JSON.parse(raw) : undefined;
+    } catch {
+      throw new Error("Managed GitLab publication identity changed.");
+    }
+    if (
+      !isRecord(record) ||
+      !isRecord(record.account) ||
+      !isRecord(record.tokens) ||
+      record.profileId !== publisher.profileId ||
+      record.createdAtMs !== publisher.recordCreatedAtMs ||
+      record.issuer !== row.issuer ||
+      record.scope !== (publisher.source === "agent-override" ? "agent" : "system") ||
+      (publisher.source === "agent-override" && record.agentId !== row.agent_id) ||
+      record.account.accountId !== row.identity_account_id ||
+      record.account.login !== row.identity_login ||
+      record.account.issuer !== row.issuer ||
+      !Number.isSafeInteger(record.tokens.expiresAtMs) ||
+      Number(record.tokens.expiresAtMs) <= Date.now() ||
+      record.pendingInitial !== undefined ||
+      record.refreshClaim !== undefined ||
+      record.refreshFailure !== undefined
+    ) {
+      throw new Error("Managed GitLab publication identity changed.");
+    }
+    return;
+  }
   const connection = readUserGitLabConnectionInDatabase(db, row.owner_profile_id, row.issuer);
   if (
     connection?.generation !== row.connection_generation ||

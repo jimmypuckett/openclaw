@@ -21,7 +21,10 @@ import {
   readPersonalGitLabPublicationAsync,
   type GitHubPublicationTransitionAuthority,
 } from "./github-publication-store-async.js";
-import type { PersonalGitLabCredential } from "./gitlab-personal-oauth.js";
+import {
+  sameGitLabPublicationPublisher,
+  type GitLabPublicationCredential,
+} from "./gitlab-personal-publication-identity.js";
 import {
   createPersonalGitLabPublicationRow,
   readAcceptedGitLabPublication,
@@ -55,7 +58,7 @@ export { gitLabPublicationReceiptSchema };
 export async function runPersonalGitLabPublication(
   options: Pick<GatewayRequestHandlerOptions, "context">,
   action: PersonalForgePublicationActionV2,
-  credential: PersonalGitLabCredential,
+  credential: GitLabPublicationCredential,
   rawInput: AcceptedGitLabPublicationInput,
 ) {
   const input = {
@@ -90,6 +93,7 @@ export async function runPersonalGitLabPublication(
     if (
       existing.idempotency_key !== input.idempotencyKey ||
       existing.connection_generation !== credential.generation ||
+      !sameGitLabPublicationPublisher(accepted.publisher, credential.publisher) ||
       existing.identity_account_id !== credential.account.accountId ||
       existing.identity_login !== credential.account.login ||
       existing.session_id !== action.sessionId ||
@@ -230,6 +234,7 @@ export async function runPersonalGitLabPublication(
             repositoryRoot: worktree.path,
             repositoryFingerprint: worktree.repoFingerprint,
             actor: { accountId: credential.account.accountId, login: credential.account.login },
+            publisher: credential.publisher,
             title: input.title,
             description: input.description ?? "",
             draft: input.draft ?? true,
@@ -322,7 +327,7 @@ export async function runPersonalGitLabPublication(
         }
         const authority: GitHubPublicationTransitionAuthority = {
           assertAction: assertCurrent,
-          assertCustody: () => workspace.assertCustody(),
+          assertCustody: assertCurrent,
           prepareSource: () =>
             preparePersonalForgePublicationSource(
               action,

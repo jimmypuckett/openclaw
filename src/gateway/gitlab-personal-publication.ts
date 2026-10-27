@@ -6,12 +6,18 @@ import type {
   SessionGitLabStatusResult,
 } from "../../packages/gateway-protocol/src/schema/gitlab.js";
 import { normalizeGitLabIssuer } from "../agents/gitlab-host.js";
+import { resolveEffectiveGitLabToolIdentity } from "../agents/gitlab-tool-identity.js";
 import { readUserGitLabConnectionAsync } from "../state/user-gitlab-connections.js";
 import type { PersonalForgePublicationActionV2 } from "./forge-personal-publication-custody.js";
 import { readGitHubPublicationWorktreeOwner } from "./github-publication-availability.js";
 import { requirePublicationCommand } from "./github-publication-git-transport.js";
 import { readPersonalGitLabPublicationAsync } from "./github-publication-store-async.js";
-import type { PersonalGitLabCredential } from "./gitlab-personal-oauth.js";
+import {
+  publicationPublisher,
+  sameGitLabPublicationPublisher,
+  type GitLabPublicationCredential,
+} from "./gitlab-personal-publication-identity.js";
+import { prepareManagedGitLabPublicationCredential } from "./gitlab-personal-publication-managed.js";
 import {
   readAcceptedGitLabPublication,
   projectPersonalGitLabTerminalResult,
@@ -96,11 +102,16 @@ function assertReceiptSession(
 function projectStatus(
   row: PersonalGitLabPublicationRow,
   action: GitLabPublicationReadAction,
-  credential: { generation: string; account: { accountId: number; login: string } } | null,
+  credential: {
+    publisher: GitLabPublicationCredential["publisher"];
+    generation: string;
+    account: { accountId: number; login: string };
+  } | null,
 ): SessionGitLabStatusResult {
   const saved = assertReceiptSession(row, action);
+  const acceptedPublisher = publicationPublisher(saved.publisher);
   const publisher = {
-    source: "personal" as const,
+    source: acceptedPublisher.source,
     accountId: row.identity_account_id,
     login: saved.actor.login,
   };
@@ -109,6 +120,7 @@ function projectStatus(
   }
   if (
     !credential ||
+    !sameGitLabPublicationPublisher(saved.publisher, credential.publisher) ||
     credential.generation !== row.connection_generation ||
     credential.account.accountId !== row.identity_account_id ||
     credential.account.login !== row.identity_login
@@ -119,7 +131,7 @@ function projectStatus(
         status: "failed",
         code: "identity_changed",
         publisher,
-        message: "The original GitLab connection changed.",
+        message: "The original GitLab publisher changed or is unavailable.",
         nextAction:
           "Preserve the accepted request and inspect its original branch and merge request.",
       },
@@ -158,10 +170,24 @@ function projectStatus(
   };
 }
 
+export async function readGitLabPublicationPublisher(
+  options: Options,
+  action: GitLabPublicationReadAction,
+  requestId: string,
+) {
+  const row = await readPersonalGitLabPublicationAsync(action.owner, issuerFor(options), {
+    requestId,
+  });
+  action.assertCurrent();
+  if (!row) {
+    throw new Error("GitLab publication request was not found.");
+  }
+  return publicationPublisher(assertReceiptSession(row, action).publisher);
+}
+
 export async function readPersonalGitLabPublicationOptions(
   options: Options,
   action: GitLabPublicationReadAction,
-  _credential: PersonalGitLabCredential | null,
   idempotencyKey?: string,
 ) {
   const issuer = issuerFor(options);
@@ -175,74 +201,121 @@ export async function readPersonalGitLabPublicationOptions(
       ? { sessionId: action.sessionId, idempotencyKey }
       : { sessionKey: action.sessionKey, agentId: action.agentId },
   );
-  const pendingPersonal = pendingRow
-    ? projectStatus(
-        pendingRow,
-        action,
-        selected?.kind === "connected" && !selected.refreshFailure
-          ? { generation: connection!.generation, account: selected.account }
-          : null,
-      )
-    : null;
-  let target: Awaited<ReturnType<typeof targetFor>> | null = null;
-  try {
-    target = await targetFor(options, action);
-  } catch {
-    // The accepted receipt remains discoverable while its original worktree is unavailable.
-    action.assertCurrent();
+  const configuredShared = resolveEffectiveGitLabToolIdentity({
+    config: options.context.getRuntimeConfig(),
+    agentId: action.agentId,
+  });
+  let sharedCredential: GitLabPublicationCredential | null = null;
+  if (configuredShared) {
+    try {
+      sharedCredential = await prepareManagedGitLabPublicationCredential({
+        config: options.context.getRuntimeConfig(),
+        getCurrentConfig: options.context.getRuntimeConfig,
+        agentId: action.agentId,
+        assertCurrent: action.assertCurrent,
+      });
+    } catch {
+      action.assertCurrent();
+    }
   }
-  return {
-    issuer,
-    personal: connection
-      ? {
-          state:
-            selected?.kind === "connected" && !selected.refresh && !selected.refreshFailure
-              ? ("connected" as const)
-              : ("disconnected" as const),
-          generation: connection.generation,
-          account:
-            selected?.kind === "connected"
-              ? { accountId: selected.account.accountId, login: selected.account.login }
-              : null,
-          accessExpiresAtMs: selected?.kind === "connected" ? selected.tokens.expiresAtMs : null,
-          refreshState:
-            selected?.kind === "connected" && (selected.refresh || selected.refreshFailure)
-              ? ("failed" as const)
-              : selected?.kind === "connected"
-                ? ("available" as const)
-                : ("not_applicable" as const),
-          pending: null,
-        }
-      : null,
-    shared: null,
-    sharedUnavailableReason: "unavailable" as const,
-    pendingPersonal,
-    latestShared: null,
-    target: target ? { repository: target.repository, branch: target.branch } : null,
-  };
+  try {
+    const pendingPublisher = pendingRow
+      ? publicationPublisher(assertReceiptSession(pendingRow, action).publisher)
+      : null;
+    const pending = pendingRow
+      ? projectStatus(
+          pendingRow,
+          action,
+          pendingPublisher?.source === "personal"
+            ? selected?.kind === "connected" && !selected.refreshFailure
+              ? {
+                  publisher: { source: "personal" },
+                  generation: connection!.generation,
+                  account: selected.account,
+                }
+              : null
+            : sharedCredential,
+        )
+      : null;
+    let target: Awaited<ReturnType<typeof targetFor>> | null = null;
+    try {
+      target = await targetFor(options, action);
+    } catch {
+      // The accepted receipt remains discoverable while its original worktree is unavailable.
+      action.assertCurrent();
+    }
+    const result = {
+      issuer,
+      personal: connection
+        ? {
+            state:
+              selected?.kind === "connected" && !selected.refresh && !selected.refreshFailure
+                ? ("connected" as const)
+                : ("disconnected" as const),
+            generation: connection.generation,
+            account:
+              selected?.kind === "connected"
+                ? { accountId: selected.account.accountId, login: selected.account.login }
+                : null,
+            accessExpiresAtMs: selected?.kind === "connected" ? selected.tokens.expiresAtMs : null,
+            refreshState:
+              selected?.kind === "connected" && (selected.refresh || selected.refreshFailure)
+                ? ("failed" as const)
+                : selected?.kind === "connected"
+                  ? ("available" as const)
+                  : ("not_applicable" as const),
+            pending: null,
+          }
+        : null,
+      shared: sharedCredential
+        ? {
+            source: sharedCredential.publisher.source as "system-configured" | "agent-override",
+            accountId: sharedCredential.account.accountId,
+            login: sharedCredential.account.login,
+          }
+        : null,
+      sharedUnavailableReason: sharedCredential
+        ? undefined
+        : configuredShared
+          ? ("unverified" as const)
+          : ("unavailable" as const),
+      pendingPersonal: pendingPublisher?.source === "personal" ? pending : null,
+      latestShared: pendingPublisher && pendingPublisher.source !== "personal" ? pending : null,
+      target: target ? { repository: target.repository, branch: target.branch } : null,
+    };
+    return result;
+  } finally {
+    sharedCredential?.close();
+  }
 }
 
 export async function readPersonalGitLabPublicationStatus(
   options: Options,
   action: GitLabPublicationReadAction,
-  credential: PersonalGitLabCredential | null,
+  credential: GitLabPublicationCredential | null,
   requestId: string,
 ) {
   const row = await readPersonalGitLabPublicationAsync(action.owner, issuerFor(options), {
     requestId,
   });
   action.assertCurrent();
-  credential?.assertCurrent();
   if (!row) {
     throw new Error("GitLab publication request was not found.");
   }
-  return projectStatus(row, action, credential);
+  let currentCredential = credential;
+  try {
+    currentCredential?.assertCurrent();
+  } catch {
+    action.assertCurrent();
+    currentCredential = null;
+  }
+  return projectStatus(row, action, currentCredential);
 }
 
 export async function requestPersonalGitLabPublication(
   options: Options,
   action: PersonalForgePublicationActionV2,
-  credential: PersonalGitLabCredential,
+  credential: GitLabPublicationCredential,
   params: SessionGitLabPublishParams,
 ) {
   const requestId = requestIdFor(action, issuerFor(options), params.idempotencyKey);
@@ -254,6 +327,8 @@ export async function requestPersonalGitLabPublication(
   if (existing) {
     const saved = assertReceiptSession(existing, action);
     if (
+      !sameGitLabPublicationPublisher(saved.publisher, credential.publisher) ||
+      existing.connection_generation !== credential.generation ||
       saved.title !== (params.title ?? `Publish ${saved.branch}`) ||
       saved.description !== (params.body ?? "") ||
       saved.draft !== (params.draft ?? true)
@@ -278,6 +353,9 @@ export async function requestPersonalGitLabPublication(
     );
   }
   const target = await targetFor(options, action);
+  if (target.issuer !== credential.account.issuer) {
+    throw new Error("The selected GitLab publisher belongs to another issuer.");
+  }
   const api = createGitLabPublicationApi({
     target: {
       issuer: target.issuer,
@@ -313,14 +391,17 @@ export async function requestPersonalGitLabPublication(
 export async function confirmPersonalGitLabPublication(
   options: Options,
   action: PersonalForgePublicationActionV2,
-  credential: PersonalGitLabCredential,
+  credential: GitLabPublicationCredential,
   params: SessionGitLabConfirmParams,
 ) {
   const row = await readPersonalGitLabPublicationAsync(action.owner, issuerFor(options), {
     requestId: params.requestId,
   });
+  const saved = row ? assertReceiptSession(row, action) : null;
   if (
     !row ||
+    !saved ||
+    !sameGitLabPublicationPublisher(saved.publisher, credential.publisher) ||
     row.request_digest !== params.requestDigest ||
     row.connection_generation !== params.generation ||
     row.identity_account_id !== params.account.accountId ||
@@ -330,7 +411,6 @@ export async function confirmPersonalGitLabPublication(
   ) {
     throw new Error("GitLab confirmation no longer matches the accepted request.");
   }
-  const saved = assertReceiptSession(row, action);
   if (row.status !== "needs_confirmation") {
     return projectStatus(row, action, credential).result;
   }

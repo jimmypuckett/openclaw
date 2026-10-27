@@ -10,9 +10,14 @@ import {
   validateSessionGitLabConfirmParams,
   validateSessionGitLabPublishParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import type { PersonalGitLabCredential } from "../gitlab-personal-oauth.js";
+import {
+  personalGitLabPublicationCredential,
+  type GitLabPublicationCredential,
+} from "../gitlab-personal-publication-identity.js";
+import { prepareManagedGitLabPublicationCredential } from "../gitlab-personal-publication-managed.js";
 import {
   confirmPersonalGitLabPublication,
+  readGitLabPublicationPublisher,
   readPersonalGitLabPublicationOptions,
   readPersonalGitLabPublicationStatus,
   requestPersonalGitLabPublication,
@@ -23,7 +28,10 @@ import {
   preparePersonalGitLabPublicationOptionsRead,
   preparePersonalGitLabSessionActionV2,
 } from "./github-personal-authorization.js";
-import { preparePersonalForgeAction } from "./personal-forge-authorization.js";
+import {
+  preparePersonalForgeAction,
+  type PersonalForgeAction,
+} from "./personal-forge-authorization.js";
 import type { GatewayRequestHandlerOptions, GatewayRequestHandlers } from "./types.js";
 import { defineValidatedGatewayMethod } from "./validation.js";
 
@@ -57,6 +65,26 @@ function rejectSelection(options: Options, idempotencyKey: string): void {
       { details: { code: "GITLAB_PUBLICATION_SELECTION_REJECTED", idempotencyKey } },
     ),
   );
+}
+
+async function selectedPublicationCredential(
+  options: Options,
+  action: PersonalForgeAction & { agentId: string },
+  source: "personal" | "shared",
+): Promise<GitLabPublicationCredential> {
+  if (source === "shared") {
+    return prepareManagedGitLabPublicationCredential({
+      config: options.context.getRuntimeConfig(),
+      getCurrentConfig: options.context.getRuntimeConfig,
+      agentId: action.agentId,
+      assertCurrent: action.assertCurrent,
+    });
+  }
+  const service = options.context.gitlabOAuthService;
+  if (!service) {
+    throw new Error("Personal GitLab is unavailable; retry after Gateway startup.");
+  }
+  return personalGitLabPublicationCredential(await service.credential(action));
 }
 
 function assertRequestedOwner(
@@ -182,7 +210,6 @@ export const gitLabHandlers: GatewayRequestHandlers = {
         const result = await readPersonalGitLabPublicationOptions(
           options,
           prepared.action,
-          null,
           options.params.idempotencyKey,
         );
         prepared.action.assertCurrent();
@@ -202,23 +229,33 @@ export const gitLabHandlers: GatewayRequestHandlers = {
         if (!prepared.action) {
           throw new Error("GitLab publication was not found for this session and caller.");
         }
-        const service = options.context.gitlabOAuthService;
-        const connection = service ? await service.status(prepared.action) : null;
-        let credential: PersonalGitLabCredential | null = null;
-        if (connection?.connected) {
-          try {
-            credential = await service!.credential(prepared.action);
-          } catch {
-            // The original receipt remains readable when refresh or verification fails.
-            prepared.action.assertCurrent();
-          }
-        }
-        const result = await readPersonalGitLabPublicationStatus(
+        const publisher = await readGitLabPublicationPublisher(
           options,
           prepared.action,
-          credential,
           options.params.requestId,
         );
+        let credential: GitLabPublicationCredential | null = null;
+        try {
+          credential = await selectedPublicationCredential(
+            options,
+            prepared.action,
+            publisher.source === "personal" ? "personal" : "shared",
+          );
+        } catch {
+          // The original receipt remains readable when its publisher is unavailable.
+          prepared.action.assertCurrent();
+        }
+        let result;
+        try {
+          result = await readPersonalGitLabPublicationStatus(
+            options,
+            prepared.action,
+            credential,
+            options.params.requestId,
+          );
+        } finally {
+          credential?.close();
+        }
         prepared.action.assertCurrent();
         options.respond(true, result);
       } catch (error) {
@@ -232,23 +269,33 @@ export const gitLabHandlers: GatewayRequestHandlers = {
     async (options) => {
       try {
         assertRequestedOwner(options, options.params);
-        const service = options.context.gitlabOAuthService;
-        if (!service) {
-          throw new Error("Personal GitLab is unavailable; retry after Gateway startup.");
-        }
         const admitted = await preparePersonalGitLabSessionActionV2(
           options,
           options.params,
           "sessions.gitlab.confirm",
         );
         using _ = { [Symbol.dispose]: () => admitted.release() };
-        const credential = await service.credential(admitted.action);
-        const result = await confirmPersonalGitLabPublication(
+        const publisher = await readGitLabPublicationPublisher(
           options,
           admitted.action,
-          credential,
-          options.params,
+          options.params.requestId,
         );
+        const credential = await selectedPublicationCredential(
+          options,
+          admitted.action,
+          publisher.source === "personal" ? "personal" : "shared",
+        );
+        let result;
+        try {
+          result = await confirmPersonalGitLabPublication(
+            options,
+            admitted.action,
+            credential,
+            options.params,
+          );
+        } finally {
+          credential.close();
+        }
         admitted.action.assertCurrent();
         options.respond(true, result);
       } catch (error) {
@@ -261,37 +308,48 @@ export const gitLabHandlers: GatewayRequestHandlers = {
     validateSessionGitLabPublishParams,
     async (options) => {
       const { params } = options;
-      if (params.selection?.source !== "personal" || !params.sessionKey) {
+      if (!params.selection || !params.sessionKey) {
         rejectSelection(options, params.idempotencyKey);
         return;
       }
       try {
         assertRequestedOwner(options, { sessionKey: params.sessionKey, agentId: params.agentId });
-        const service = options.context.gitlabOAuthService;
-        if (!service) {
-          rejectSelection(options, params.idempotencyKey);
-          return;
-        }
         const admitted = await preparePersonalGitLabSessionActionV2(options, {
           sessionKey: params.sessionKey,
           agentId: params.agentId,
         });
         using _ = { [Symbol.dispose]: () => admitted.release() };
-        const credential = await service.credential(admitted.action);
-        if (
-          credential.generation !== params.selection.generation ||
-          credential.account.accountId !== params.selection.account.accountId ||
-          credential.account.login !== params.selection.account.login
-        ) {
-          rejectSelection(options, params.idempotencyKey);
-          return;
-        }
-        const result = await requestPersonalGitLabPublication(
+        const credential = await selectedPublicationCredential(
           options,
           admitted.action,
-          credential,
-          params,
+          params.selection.source,
         );
+        let result;
+        try {
+          const selected = params.selection;
+          if (
+            (selected.source === "personal" &&
+              (credential.generation !== selected.generation ||
+                credential.account.accountId !== selected.account.accountId ||
+                credential.account.login !== selected.account.login)) ||
+            (selected.source === "shared" &&
+              selected.expected &&
+              (credential.publisher.source !== selected.expected.source ||
+                credential.account.accountId !== selected.expected.accountId ||
+                credential.account.login !== selected.expected.login))
+          ) {
+            rejectSelection(options, params.idempotencyKey);
+            return;
+          }
+          result = await requestPersonalGitLabPublication(
+            options,
+            admitted.action,
+            credential,
+            params,
+          );
+        } finally {
+          credential.close();
+        }
         admitted.action.assertCurrent();
         options.respond(true, result);
       } catch (error) {

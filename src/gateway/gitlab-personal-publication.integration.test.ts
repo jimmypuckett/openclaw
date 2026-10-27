@@ -4,6 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
+import {
+  createGitLabManagedOAuthRecord,
+  writeGitLabManagedOAuthRecord,
+  type GitLabManagedOAuthRecord,
+} from "../agents/gitlab-managed-records.js";
 import { insertRegistryWorktree } from "../agents/worktrees/registry.js";
 import {
   clearRuntimeConfigSnapshot,
@@ -54,6 +59,11 @@ import { disconnectedUserGitLabConnection } from "../state/user-gitlab-connectio
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { readPersonalGitLabPublicationAsync } from "./github-publication-store-async.js";
+import {
+  managedGitLabPublicationGeneration,
+  type GitLabPublicationCredential,
+  type GitLabPublicationPublisher,
+} from "./gitlab-personal-publication-identity.js";
 import { readAcceptedGitLabPublication } from "./gitlab-personal-publication-row.js";
 import {
   confirmPersonalGitLabPublication,
@@ -102,6 +112,8 @@ it.each([
   "project-allowlist-omitted",
   "project-denied",
   "project-policy-revoked",
+  "shared-native",
+  "shared-agent-native",
 ] as const)("keeps native publication authority and exact Git state for %s", async (fault) =>
   withOpenClawTestState({ scenario: "minimal" }, async () => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "gitlab-native-acceptance-"));
@@ -152,28 +164,74 @@ it.each([
       state.pushes = 0;
       state.failFirstPush = fault === "lost-first-push";
       const owner = ensureProfileForEmail(`gitlab-${fault}@example.test`).id;
-      const generation = randomUUID();
-      await replaceUserGitLabConnection(
-        owner,
-        issuer,
-        undefined,
-        {
-          version: 1,
+      const publicationAccount =
+        fault === "shared-native" || fault === "shared-agent-native"
+          ? {
+              ...account,
+              login: "managed-bot",
+              name: "Managed Bot",
+              commitEmail: "managed-bot@example.test",
+            }
+          : account;
+      let generation = randomUUID();
+      let publisher: GitLabPublicationPublisher = { source: "personal" };
+      let managedRecord: GitLabManagedOAuthRecord | undefined;
+      if (fault === "shared-native" || fault === "shared-agent-native") {
+        await replaceUserGitLabConnection(
+          owner,
           issuer,
-          generation,
-          selection: {
-            kind: "connected",
-            account,
-            tokens: {
-              accessToken: "synthetic-token",
-              refreshToken: "synthetic-refresh",
-              expiresAtMs: Date.now() + 3600000,
-              scopes: ["api"],
+          undefined,
+          disconnectedUserGitLabConnection(issuer),
+          () => {},
+        );
+        const record = createGitLabManagedOAuthRecord({
+          profileId: "glp_cccccccccccccccccccccccccccccccc",
+          scope: fault === "shared-agent-native" ? "agent" : "system",
+          agentId: "main",
+          account: publicationAccount,
+          tokens: {
+            accessToken: "synthetic-token",
+            refreshToken: "synthetic-refresh",
+            expiresAtMs: Date.now() + 3600000,
+            scopes: ["api", "write_repository"],
+          },
+        });
+        await writeGitLabManagedOAuthRecord(record);
+        managedRecord = record;
+        publisher = {
+          source: fault === "shared-agent-native" ? "agent-override" : "system-configured",
+          profileId: record.profileId,
+          recordCreatedAtMs: record.createdAtMs,
+        };
+        generation = managedGitLabPublicationGeneration({
+          publisher,
+          issuer,
+          accountId: publicationAccount.accountId,
+          login: publicationAccount.login,
+        });
+      } else {
+        await replaceUserGitLabConnection(
+          owner,
+          issuer,
+          undefined,
+          {
+            version: 1,
+            issuer,
+            generation,
+            selection: {
+              kind: "connected",
+              account,
+              tokens: {
+                accessToken: "synthetic-token",
+                refreshToken: "synthetic-refresh",
+                expiresAtMs: Date.now() + 3600000,
+                scopes: ["api"],
+              },
             },
           },
-        },
-        () => {},
-      );
+          () => {},
+        );
+      }
       const requestId = randomUUID();
       const mrs: Array<Record<string, unknown>> = [];
       let posts = 0;
@@ -187,9 +245,9 @@ it.each([
           if (endpoint === "user") {
             return Response.json({
               id: 42,
-              username: "alice",
-              name: account.name,
-              commit_email: account.commitEmail,
+              username: publicationAccount.login,
+              name: publicationAccount.name,
+              commit_email: publicationAccount.commitEmail,
             });
           }
           if (endpoint === "projects/17") {
@@ -257,11 +315,13 @@ it.each([
             assertCurrent() {},
           }),
       };
-      const credential = {
-        account,
+      const credential: GitLabPublicationCredential = {
+        publisher,
+        account: publicationAccount,
         generation,
         assertCurrent() {},
         withToken: async <T>(run: (token: string) => Promise<T>) => run("synthetic-token"),
+        close() {},
       };
       let projects: number[] | undefined =
         fault === "project-allowlist-omitted" || fault === "project-policy-revoked"
@@ -347,7 +407,7 @@ it.each([
         expect(state.pushes).toBe(0);
         return;
       }
-      expect(firstResult.status).toBe("needs_confirmation");
+      expect(firstResult).toMatchObject({ status: "needs_confirmation" });
       const acceptedRequestId = firstResult.requestId;
       const first = await readPersonalGitLabPublicationAsync(owner, issuer, {
         requestId: acceptedRequestId,
@@ -357,7 +417,6 @@ it.each([
         const keyA = await readPersonalGitLabPublicationOptions(
           options as never,
           action as never,
-          credential,
           input.idempotencyKey,
         );
         expect(keyA.pendingPersonal?.result).toMatchObject({
@@ -367,7 +426,6 @@ it.each([
         const keyB = await readPersonalGitLabPublicationOptions(
           options as never,
           action as never,
-          credential,
           randomUUID(),
         );
         expect(keyB.pendingPersonal).toBeNull();
@@ -382,8 +440,72 @@ it.each([
       expect(git(cwd, "rev-parse", `${finalHead}^{tree}`)).toBe(saved.workspaceHead);
       expect(git(cwd, "show", "-s", "--format=%P", finalHead)).toBe(source);
       expect(git(cwd, "show", "-s", "--format=%an <%ae> (%cn <%ce>)", finalHead)).toBe(
-        "Alice Human <alice@example.test> (Alice Human <alice@example.test>)",
+        `${publicationAccount.name} <${publicationAccount.commitEmail}> (${publicationAccount.name} <${publicationAccount.commitEmail}>)`,
       );
+      if (fault === "shared-native" || fault === "shared-agent-native") {
+        expect(saved.publisher).toEqual(publisher);
+        expect(first?.connection_generation).toBe(generation);
+        expect(first?.owner_profile_id).toBe(owner);
+        const personalSameActor: GitLabPublicationCredential = {
+          ...credential,
+          publisher: { source: "personal" },
+        };
+        expect(
+          (
+            await readPersonalGitLabPublicationStatus(
+              options as never,
+              action as never,
+              personalSameActor,
+              acceptedRequestId,
+            )
+          ).result,
+        ).toMatchObject({
+          status: "failed",
+          code: "identity_changed",
+          publisher: { source: publisher.source, login: publicationAccount.login },
+        });
+        await expect(
+          requestPersonalGitLabPublication(
+            options as never,
+            action as never,
+            personalSameActor,
+            input,
+          ),
+        ).rejects.toThrow("different accepted GitLab publication");
+        const status = await readPersonalGitLabPublicationStatus(
+          options as never,
+          action as never,
+          credential,
+          acceptedRequestId,
+        );
+        await expect(
+          confirmPersonalGitLabPublication(options as never, action as never, personalSameActor, {
+            requestId: acceptedRequestId,
+            ...status.confirmation!,
+          } as never),
+        ).rejects.toThrow("confirmation no longer matches");
+        const interrupted = { ...managedRecord!, refreshClaim: randomUUID() };
+        await writeGitLabManagedOAuthRecord(interrupted, managedRecord);
+        await expect(
+          confirmPersonalGitLabPublication(options as never, action as never, credential, {
+            requestId: acceptedRequestId,
+            ...status.confirmation!,
+          } as never),
+        ).rejects.toThrow("identity changed");
+        expect(posts).toBe(1);
+        await writeGitLabManagedOAuthRecord(managedRecord!, interrupted);
+        expect(
+          await confirmPersonalGitLabPublication(options as never, action as never, credential, {
+            requestId: acceptedRequestId,
+            ...status.confirmation!,
+          } as never),
+        ).toMatchObject({
+          status: "published",
+          publisher: { source: publisher.source, login: publicationAccount.login },
+        });
+        expect(posts).toBe(1);
+        return;
+      }
       if (fault === "lost-mr-response") {
         await expect(
           requestPersonalGitLabPublication(options as never, action as never, credential, {
@@ -575,7 +697,6 @@ it.each([
       const completedOptions = await readPersonalGitLabPublicationOptions(
         options as never,
         action as never,
-        null,
         input.idempotencyKey,
       );
       expect(completedOptions.pendingPersonal?.result).toMatchObject({
