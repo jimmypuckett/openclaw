@@ -101,7 +101,11 @@ export class GitHubPublicationOwner {
   private activity: GitHubPublicationActivity | null = null;
   private options: GitHubPublicationOptions | null = null;
   private selection: GitHubPublicationSelection | null = null;
-  private attempt: { idempotencyKey: string; selection: GitHubPublicationSelection } | null = null;
+  private attempt: {
+    idempotencyKey: string;
+    selection: GitHubPublicationSelection;
+    issuer?: string;
+  } | null = null;
   result: SessionGitHubPublicationResult | null = null;
   private confirmation: SessionGitHubStatusResult["confirmation"] = null;
   private error: string | null = null;
@@ -389,9 +393,14 @@ export class GitHubPublicationOwner {
         return;
       }
       const sharedAttempt = this.attempt?.selection.source === "shared" ? this.attempt : null;
+      const personalAttempt =
+        this.provider === "gitlab" && this.attempt?.selection.source === "personal"
+          ? this.attempt
+          : null;
+      const lookupAttempt = sharedAttempt ?? personalAttempt;
       const options = await scope.client.request<GitHubPublicationOptions>(this.method("options"), {
         ...scope.target,
-        ...(sharedAttempt ? { idempotencyKey: sharedAttempt.idempotencyKey } : {}),
+        ...(lookupAttempt ? { idempotencyKey: lookupAttempt.idempotencyKey } : {}),
       });
       if (!current()) {
         return;
@@ -411,7 +420,29 @@ export class GitHubPublicationOwner {
           return;
         }
       }
-      let recovered = !this.locked && !this.result ? options.pendingPersonal : null;
+      let recovered =
+        (personalAttempt || !this.locked) && !this.result ? options.pendingPersonal : null;
+      if (
+        personalAttempt &&
+        personalAttempt.issuer &&
+        personalAttempt.issuer === asNullableRecord(options)?.issuer &&
+        !recovered &&
+        !this.result
+      ) {
+        const connected = personalGitHubPublicationSelection(options);
+        const previous = personalAttempt.selection;
+        if (
+          connected &&
+          previous.source === "personal" &&
+          connected.account.accountId === previous.account.accountId &&
+          connected.account.login === previous.account.login
+        ) {
+          // Reconnection may change generation before admission. Retain the same
+          // request key so a concurrent accepted request can still be recovered.
+          personalAttempt.selection = connected;
+          this.selection = connected;
+        }
+      }
       if (
         !recovered &&
         (sharedAttempt ||
@@ -466,12 +497,18 @@ export class GitHubPublicationOwner {
     await this.run(presentation, "publish", async (owner, current) => {
       this.owner.reserve();
       const firstInvocation = this.attempt === null;
-      const attempt = this.attempt ?? { idempotencyKey: generateUUID(), selection };
+      const issuer = asNullableRecord(this.options)?.issuer;
+      const attempt = this.attempt ?? {
+        idempotencyKey: generateUUID(),
+        selection,
+        ...(this.provider === "gitlab" && typeof issuer === "string" ? { issuer } : {}),
+      };
       this.attempt = attempt;
       const result = await owner.client
         .request<SessionGitHubPublicationResult>(this.method("publish"), {
           ...owner.target,
-          ...attempt,
+          idempotencyKey: attempt.idempotencyKey,
+          selection: attempt.selection,
         })
         .catch((error: unknown) => {
           // A rejected retry says nothing about an earlier same-key call still preparing.

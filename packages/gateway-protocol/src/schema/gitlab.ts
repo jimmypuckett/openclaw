@@ -170,6 +170,7 @@ export const PersonalGitLabPublicationStatusSchema = closedObject({
   ]),
 });
 export const SessionGitLabOptionsResultSchema = closedObject({
+  issuer: Type.Union([NonEmptyString, Type.Null()]),
   personal: Type.Union([PersonalGitLabPublicationStatusSchema, Type.Null()]),
   shared: Type.Union([GitLabPublicationPublisherSchema, Type.Null()]),
   sharedUnavailableReason: Type.Optional(

@@ -155,6 +155,7 @@ export const gitLabHandlers: GatewayRequestHandlers = {
         using prepared = await preparePersonalGitLabPublicationOptionsRead(options, options.params);
         if (!prepared.action) {
           options.respond(true, {
+            issuer: null,
             personal: null,
             shared: null,
             sharedUnavailableReason: "unavailable",

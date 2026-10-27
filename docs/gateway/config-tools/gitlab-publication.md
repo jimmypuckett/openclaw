@@ -1,16 +1,16 @@
 ---
-summary: "Connect a personal GitLab account for managed-session merge request publication"
+summary: "Connect a GitLab account with per-user OAuth for managed-session publication"
 read_when:
-  - Configuring personal GitLab publication
+  - Configuring GitLab publication
   - Understanding GitLab publication identity and recovery
 ---
 
-# Personal GitLab publication
+# GitLab connections and publication
 
 GitLab publication uses a connected human account selected in the session's
 publication flow. Credentials stay on the Gateway. Each user connects their own
 account; another participant's connection cannot authorize publication for them.
-A missing, expired or disconnected personal connection does not fall back to a
+A missing, expired or disconnected user connection does not fall back to a
 shared account or an ambient CLI token.
 
 ## Configure the Gateway

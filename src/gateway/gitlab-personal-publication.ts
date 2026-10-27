@@ -5,6 +5,7 @@ import type {
   SessionGitLabConfirmParams,
   SessionGitLabStatusResult,
 } from "../../packages/gateway-protocol/src/schema/gitlab.js";
+import { normalizeGitLabIssuer } from "../agents/gitlab-host.js";
 import { readUserGitLabConnectionAsync } from "../state/user-gitlab-connections.js";
 import type { PersonalForgePublicationActionV2 } from "./forge-personal-publication-custody.js";
 import { readGitHubPublicationWorktreeOwner } from "./github-publication-availability.js";
@@ -34,7 +35,7 @@ function issuerFor(options: Options): string {
   if (!issuer) {
     throw new Error("GitLab publication is not configured.");
   }
-  return issuer;
+  return normalizeGitLabIssuer(issuer);
 }
 
 function requestIdFor(action: GitLabPublicationReadAction, issuer: string, key: string): string {
@@ -191,6 +192,7 @@ export async function readPersonalGitLabPublicationOptions(
     action.assertCurrent();
   }
   return {
+    issuer,
     personal: connection
       ? {
           state:

@@ -15,6 +15,7 @@ describe("native GitLab publication", () => {
     const request = vi.fn(async (method: string) => {
       if (method === "sessions.gitlab.options") {
         return {
+          issuer: "https://gitlab.example.test",
           target: { repository: "group/project", branch: "feature/one", baseBranch: "master" },
           shared: null,
           personal: {
@@ -74,6 +75,102 @@ describe("native GitLab publication", () => {
     });
     expect(binding.view()?.result?.status).toBe("requested");
   });
+
+  it.each(["not-accepted", "accepted", "issuer-changed"])(
+    "preserves the request key after credential failure: %s",
+    async (scenario) => {
+      const accepted = scenario === "accepted";
+      let reads = 0;
+      let publishes = 0;
+      const replacementGeneration = "reconnected-generation";
+      const request = vi.fn(async (method: string, _params?: Record<string, unknown>) => {
+        if (method === "sessions.gitlab.options") {
+          reads++;
+          return {
+            issuer:
+              scenario === "issuer-changed" && reads > 1
+                ? "https://other-gitlab.example.test"
+                : "https://gitlab.example.test",
+            shared: null,
+            personal: {
+              state: "connected",
+              account,
+              generation: reads === 1 ? generation : replacementGeneration,
+              accessExpiresAtMs: null,
+              refreshState: "available",
+              pending: null,
+            },
+            pendingPersonal:
+              accepted && reads > 1
+                ? {
+                    result: {
+                      requestId,
+                      status: "needs_confirmation",
+                      publisher: { source: "personal", ...account },
+                    },
+                    confirmation: null,
+                  }
+                : null,
+            latestShared: null,
+          };
+        }
+        if (method === "sessions.gitlab.publish") {
+          publishes++;
+          if (publishes === 1) {
+            throw Object.assign(new Error("Reconnect your account"), { code: "FORBIDDEN" });
+          }
+          return { requestId, status: "requested", publisher: { source: "personal", ...account } };
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      });
+      const owner = new GitHubPublicationOwner(
+        {
+          client: { request: request as unknown as GatewayBrowserClient["request"] },
+          target: { sessionKey: "agent:main:one" },
+          isCurrent: () => true,
+          reserve: () => {},
+          release: () => {},
+          unbound: () => {},
+        },
+        "gitlab",
+      );
+      const binding = owner.bind();
+      binding.sync({
+        canPublishShared: false,
+        canPublishPersonal: true,
+        personalReady: true,
+        isPresented: () => true,
+        isCurrent: () => true,
+      });
+      await vi.waitFor(() => expect(binding.view()?.activity).toBeNull());
+      await binding.view()?.onPublish?.();
+      const firstParams = request.mock.calls.find(
+        ([method]) => method === "sessions.gitlab.publish",
+      )?.[1];
+      expect(binding.view()?.locked).toBe(true);
+      await binding.view()?.onRefresh();
+      expect(request).toHaveBeenLastCalledWith("sessions.gitlab.options", {
+        sessionKey: "agent:main:one",
+        idempotencyKey: expect.any(String),
+      });
+      if (scenario === "issuer-changed") {
+        expect(binding.view()?.selection).toEqual({ source: "personal", account, generation });
+        expect(binding.view()?.locked).toBe(true);
+        expect(publishes).toBe(1);
+      } else if (accepted) {
+        expect(binding.view()?.result?.requestId).toBe(requestId);
+        expect(binding.view()?.result?.status).toBe("needs_confirmation");
+        expect(publishes).toBe(1);
+      } else {
+        await binding.view()?.onPublish?.();
+        expect(request).toHaveBeenLastCalledWith("sessions.gitlab.publish", {
+          ...firstParams,
+          selection: { source: "personal", account, generation: replacementGeneration },
+        });
+        expect(binding.view()?.result?.status).toBe("requested");
+      }
+    },
+  );
 
   it("offers a GitLab work row without a GitHub pull-request branch", () => {
     expect(

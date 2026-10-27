@@ -262,7 +262,9 @@ it.each([
       };
       const options = {
         context: {
-          getRuntimeConfig: () => ({ gateway: { gitlab: { issuer, projects: [17] } } }),
+          getRuntimeConfig: () => ({
+            gateway: { gitlab: { issuer: `${issuer}/`, projects: [17] } },
+          }),
           workerSessionPlacementService: {
             workspaceResultInstanceId: () => "gitlab-fixture-gateway",
             withLocalWorkspaceReservation: async (
