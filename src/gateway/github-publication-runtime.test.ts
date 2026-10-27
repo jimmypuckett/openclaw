@@ -204,6 +204,50 @@ function installPublicationRecoveryTests(engine: "sqlite" | "postgres") {
     ]);
   });
 
+  it("wakes GitLab reporting on its terminal receipt without waking GitHub recovery", async () => {
+    let notify: Parameters<typeof githubPublicationReceipts.subscribeFacts>[0] = () => {
+      throw new Error("runtime did not subscribe");
+    };
+    const subscribe = githubPublicationReceipts.subscribeFacts;
+    vi.spyOn(githubPublicationReceipts, "subscribeFacts").mockImplementation((listener) => {
+      notify = listener;
+      return subscribe(listener);
+    });
+    const scanGitLab = vi
+      .spyOn(publicationStore, "listUnreportedPersonalGitLabPublicationsAsync")
+      .mockResolvedValue([]);
+    const { runtime, recovery } = createRuntime();
+    await runtime.reconcilePublications();
+    await runtime.reconcilePublications();
+    expect(scanGitLab).toHaveBeenCalledTimes(1);
+    expect(recovery).toHaveBeenCalledTimes(1);
+
+    notify(
+      {
+        kind: "committed",
+        receipt: {
+          version: 1,
+          operationId: "gitlab-terminal-test",
+          source: {
+            identity: captureOpenClawStateWorkerContext().admission.identity.key,
+            incarnation: "gitlab-terminal-test",
+          },
+          domain: "github-publication",
+          facts: new Map([
+            [
+              JSON.stringify(["gitlab-personal", "gitlab-terminal-test"]),
+              { kind: "postimage", value: { status: "failed", reported_at_ms: null } },
+            ],
+          ]),
+        },
+      } as Parameters<typeof notify>[0],
+      false,
+    );
+    await runtime.reconcilePublications();
+    expect(scanGitLab).toHaveBeenCalledTimes(2);
+    expect(recovery).toHaveBeenCalledTimes(1);
+  });
+
   it.each(
     (["repository", "shared"] as const).flatMap((kind) =>
       (["load", "defer", "resume"] as const).flatMap((boundary) =>

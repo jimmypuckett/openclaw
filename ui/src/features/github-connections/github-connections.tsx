@@ -1,4 +1,4 @@
-import { createMemo, createSignal, onSettled } from "solid-js";
+import { createEffect, createMemo, createSignal, onSettled } from "solid-js";
 import { pathForAgentPanel } from "../../app-route-paths.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorAdminAccess, hasOperatorReadAccess } from "../../app/operator-access.ts";
@@ -40,7 +40,7 @@ function access(snapshot: ApplicationGatewaySnapshot) {
 }
 
 /** Profile credentials have their own read-scoped lifecycle, independent of users.self edits. */
-export function GitHubConnections() {
+export function GitHubConnections(props: { connectRequest?: number } = {}) {
   const context = useApplication();
   const gateway = projectGateway(context.gateway);
   const agents = projectAgents(context.agents);
@@ -194,10 +194,10 @@ export function GitHubConnections() {
   const personalView = personal.read;
   const systemView = system.read;
   const active = () => (purpose() === "personal" ? personal : system);
-  const openSetup = (next: "personal" | "system") => {
+  const openSetupWithView = (next: "personal" | "system", currentView: ReturnType<typeof view>) => {
     const currentAccess = access(context.gateway.snapshot);
     if (
-      view().locked ||
+      currentView.locked ||
       (next === "personal"
         ? !currentAccess.profileId || !currentAccess.canRead
         : !currentAccess.canAdmin)
@@ -207,6 +207,15 @@ export function GitHubConnections() {
     setPurpose(next);
     setSetupOpen(true);
   };
+  const openSetup = (next: "personal" | "system") => openSetupWithView(next, view());
+  createEffect(
+    () => ({ request: props.connectRequest ?? 0, currentView: view() }),
+    ({ request, currentView }, previous) => {
+      if (request > 0 && request !== previous?.request) {
+        openSetupWithView("personal", currentView);
+      }
+    },
+  );
   const verify = () => {
     void personal.verify();
     void system.verify();

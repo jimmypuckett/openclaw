@@ -66,4 +66,12 @@ export {
   isTranscriptsGetParams,
   isTranscriptsExportParams,
   isTranscriptsStatusParams,
+  isUsersGitLabStatusParams,
+  isUsersGitLabAuthorizeStartParams,
+  isUsersGitLabAuthorizeCompleteParams,
+  isUsersGitLabDisconnectParams,
+  isSessionGitLabOptionsParams,
+  isSessionGitLabStatusParams,
+  isSessionGitLabConfirmParams,
+  isSessionGitLabPublishParams,
 } from "./predicates.js";

@@ -129,9 +129,18 @@ function WorkRow(props: {
         </span>
         <span class="chat-pr__identity">
           <span class="chat-pr__repo">
-            {published()?.repository ?? props.branch?.repo ?? t("chat.pullRequests.publishPr")}
+            {published()?.repository ??
+              props.publication?.target?.repository ??
+              props.branch?.repo ??
+              t(
+                props.publication?.provider === "gitlab"
+                  ? "githubPublication.title"
+                  : "chat.pullRequests.publishPr",
+              )}
           </span>
-          <span class="chat-pr__branch">{published()?.branch ?? props.branch?.branch}</span>
+          <span class="chat-pr__branch">
+            {published()?.branch ?? props.publication?.target?.branch ?? props.branch?.branch}
+          </span>
         </span>
       </span>
       <span class="chat-pr__meta">
@@ -144,7 +153,9 @@ function WorkRow(props: {
             />
           )}
         </Show>
-        <StatusWarning status={props.status} />
+        <Show when={props.publication?.provider !== "gitlab"}>
+          <StatusWarning status={props.status} />
+        </Show>
         <Show
           when={props.publication}
           fallback={
@@ -199,7 +210,10 @@ export function ChatPullRequestsContent(props: ChatPullRequestsProps) {
   const published = () =>
     props.publication?.result?.status === "published" ? props.publication.result : undefined;
   const retained = () => retainedPublication(props.publication);
-  const branch = () => (props.publishedOnly || props.branchDismissed ? undefined : props.branch);
+  const branch = () =>
+    props.publishedOnly || props.branchDismissed || props.publication?.provider === "gitlab"
+      ? undefined
+      : props.branch;
   const workRow = () => !props.publishedOnly && showWorkRow(props);
   const visible = createMemo(() => chatPullRequestRows(props));
   const recovery = () =>

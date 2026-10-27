@@ -78,6 +78,8 @@ const loaders = {
     ),
   userGitHubConnections: () =>
     import("./user-github-connections.worker.js").then((m) => m.userGitHubConnectionOperations),
+  userGitLabConnections: () =>
+    import("./user-gitlab-connections.worker.js").then((m) => m.userGitLabConnectionOperations),
   githubPublications: () =>
     import("./github-publication.worker.js").then((m) => m.publicationOperations),
   userBackground: async () =>

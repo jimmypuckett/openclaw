@@ -266,3 +266,43 @@ export const validateTranscriptsStatusParams = createProtocolValidator(
   S.TranscriptsStatusParamsSchema,
   Checks.isTranscriptsStatusParams,
 );
+
+export const validateUsersGitLabStatusParams = createProtocolValidator(
+  S.UsersGitLabStatusParamsSchema,
+  Checks.isUsersGitLabStatusParams,
+);
+
+export const validateUsersGitLabAuthorizeStartParams = createProtocolValidator(
+  S.UsersGitLabAuthorizeStartParamsSchema,
+  Checks.isUsersGitLabAuthorizeStartParams,
+);
+
+export const validateUsersGitLabAuthorizeCompleteParams = createProtocolValidator(
+  S.UsersGitLabAuthorizeCompleteParamsSchema,
+  Checks.isUsersGitLabAuthorizeCompleteParams,
+);
+
+export const validateUsersGitLabDisconnectParams = createProtocolValidator(
+  S.UsersGitLabDisconnectParamsSchema,
+  Checks.isUsersGitLabDisconnectParams,
+);
+
+export const validateSessionGitLabOptionsParams = createProtocolValidator(
+  S.SessionGitLabOptionsParamsSchema,
+  Checks.isSessionGitLabOptionsParams,
+);
+
+export const validateSessionGitLabStatusParams = createProtocolValidator(
+  S.SessionGitLabStatusParamsSchema,
+  Checks.isSessionGitLabStatusParams,
+);
+
+export const validateSessionGitLabConfirmParams = createProtocolValidator(
+  S.SessionGitLabConfirmParamsSchema,
+  Checks.isSessionGitLabConfirmParams,
+);
+
+export const validateSessionGitLabPublishParams = createProtocolValidator(
+  S.SessionGitLabPublishParamsSchema,
+  Checks.isSessionGitLabPublishParams,
+);

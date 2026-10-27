@@ -4,6 +4,7 @@ import { cronListShareKey, modelsListShareKey, operatorReadShareKey } from "./re
 // Canonical append-only method table; derived lookup and dispatch policy lives in core-method-policy.ts.
 const CONTROL_PLANE_WRITE = { controlPlaneWrite: true } as const;
 const SIDECAR_CONTROL_PLANE_WRITE = { startup: true, controlPlaneWrite: true } as const;
+const GITLAB_OAUTH_WRITE = SIDECAR_CONTROL_PLANE_WRITE;
 const UNADVERTISED = { advertise: false } as const;
 const PROFILE_DEPENDENT = { profileAccess: "required" } as const;
 const PROFILE_STARTUP = { startup: true, ...PROFILE_DEPENDENT } as const;
@@ -742,4 +743,12 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["update.recovery.cleanup", "update", "operator.admin", "2026.10", CONTROL_PLANE_WRITE],
   ["diagnostics.capabilities", "diagnostics", "operator.read", "2026.10"],
   ["cron.bind", "cron", "operator.admin", "2026.10", CONTROL_PLANE_WRITE],
+  ["users.gitlab.status", "gitlab", "operator.read", "2026.10", { startup: true }],
+  ["users.gitlab.authorize.start", "gitlab", "operator.read", "2026.10", GITLAB_OAUTH_WRITE],
+  ["users.gitlab.authorize.complete", "gitlab", "operator.read", "2026.10", GITLAB_OAUTH_WRITE],
+  ["users.gitlab.disconnect", "gitlab", "operator.read", "2026.10", GITLAB_OAUTH_WRITE],
+  ["sessions.gitlab.options", "gitlab", "operator.sessions.read", "2026.10"],
+  ["sessions.gitlab.status", "gitlab", "operator.sessions.read", "2026.10"],
+  ["sessions.gitlab.confirm", "gitlab", "operator.write", "2026.10"],
+  ["sessions.gitlab.publish", "gitlab", "operator.write", "2026.10"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];

@@ -11,6 +11,7 @@ import {
   installActiveGitHubOAuthLifecycle,
 } from "./github-oauth-lifecycle.js";
 import { startGitHubPublicationDiscovery } from "./github-publication-discovery.js";
+import { createPersonalGitLabOAuthLifecycle } from "./gitlab-personal-oauth.js";
 import { createModelAccountConnectService } from "./model-account-connect.js";
 import {
   broadcastChatMetadataChanged,
@@ -66,6 +67,18 @@ export async function attachInitialGatewayLifetimeSidecars(params: {
       await modelAccountConnect.stop();
       if (params.gatewayRequestContext.modelAccountConnectService === modelAccountConnect) {
         delete params.gatewayRequestContext.modelAccountConnectService;
+      }
+    },
+  });
+  const gitlabOAuth = createPersonalGitLabOAuthLifecycle(
+    params.gatewayRequestContext.getRuntimeConfig,
+  );
+  params.gatewayRequestContext.gitlabOAuthService = gitlabOAuth;
+  params.publishSidecars({
+    stop: async () => {
+      await gitlabOAuth.stop();
+      if (params.gatewayRequestContext.gitlabOAuthService === gitlabOAuth) {
+        delete params.gatewayRequestContext.gitlabOAuthService;
       }
     },
   });

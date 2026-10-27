@@ -1,4 +1,5 @@
 import { readGitHubPublicationSelectionRejectedError } from "@openclaw/gateway-protocol/gateway-error-details";
+import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Static } from "typebox";
 import type {
   GitHubPublicationPublisher,
@@ -13,6 +14,12 @@ import { formatUiError } from "../format-error.ts";
 import { generateUUID } from "../uuid.ts";
 
 export type GitHubPublicationOptions = Static<typeof SessionGitHubOptionsResultSchema>;
+export type RepositoryPublicationProvider = "github" | "gitlab";
+export type RepositoryPublicationTarget = {
+  repository: string;
+  branch: string;
+  baseBranch?: string;
+};
 type GitHubPublicationPresentation = {
   canPublishShared: boolean;
   canPublishPersonal: boolean;
@@ -44,6 +51,8 @@ export type GitHubPublicationPresentationBinding = {
 type GitHubPublicationActivity = "read" | "publish" | "confirm";
 
 export type GitHubPublicationView = {
+  provider?: RepositoryPublicationProvider;
+  target?: RepositoryPublicationTarget | null;
   readiness: { read: Promise<void> | null; retired: Promise<void> };
   activity: GitHubPublicationActivity | null;
   canPublishShared: boolean;
@@ -101,7 +110,29 @@ export class GitHubPublicationOwner {
   private refreshPending = false;
   private readCompletion: PromiseWithResolvers<void> | null = null;
 
-  constructor(private readonly owner: PublicationOwner) {}
+  constructor(
+    private readonly owner: PublicationOwner,
+    private readonly provider: RepositoryPublicationProvider = "github",
+  ) {}
+
+  private method(action: "options" | "status" | "publish" | "confirm"): string {
+    return `sessions.${this.provider}.${action}`;
+  }
+
+  private rejectedSelectionKey(error: unknown): string | null {
+    if (this.provider === "github") {
+      return readGitHubPublicationSelectionRejectedError(error)?.idempotencyKey ?? null;
+    }
+    const response = asNullableRecord(error);
+    const details = asNullableRecord(response?.details);
+    return response?.code === "UNAVAILABLE" &&
+      details?.code === "GITLAB_PUBLICATION_SELECTION_REJECTED" &&
+      Object.keys(details).length === 2 &&
+      typeof details.idempotencyKey === "string" &&
+      details.idempotencyKey.length > 0
+      ? details.idempotencyKey
+      : null;
+  }
 
   private get busy(): boolean {
     return this.activity !== null;
@@ -340,7 +371,7 @@ export class GitHubPublicationOwner {
     current: () => boolean,
     requestId: string,
   ): Promise<void> {
-    const status = await scope.client.request<SessionGitHubStatusResult>("sessions.github.status", {
+    const status = await scope.client.request<SessionGitHubStatusResult>(this.method("status"), {
       ...scope.target,
       requestId,
     });
@@ -358,13 +389,10 @@ export class GitHubPublicationOwner {
         return;
       }
       const sharedAttempt = this.attempt?.selection.source === "shared" ? this.attempt : null;
-      const options = await scope.client.request<GitHubPublicationOptions>(
-        "sessions.github.options",
-        {
-          ...scope.target,
-          ...(sharedAttempt ? { idempotencyKey: sharedAttempt.idempotencyKey } : {}),
-        },
-      );
+      const options = await scope.client.request<GitHubPublicationOptions>(this.method("options"), {
+        ...scope.target,
+        ...(sharedAttempt ? { idempotencyKey: sharedAttempt.idempotencyKey } : {}),
+      });
       if (!current()) {
         return;
       }
@@ -441,7 +469,7 @@ export class GitHubPublicationOwner {
       const attempt = this.attempt ?? { idempotencyKey: generateUUID(), selection };
       this.attempt = attempt;
       const result = await owner.client
-        .request<SessionGitHubPublicationResult>("sessions.github.publish", {
+        .request<SessionGitHubPublicationResult>(this.method("publish"), {
           ...owner.target,
           ...attempt,
         })
@@ -451,8 +479,7 @@ export class GitHubPublicationOwner {
             firstInvocation &&
             current() &&
             this.attempt === attempt &&
-            readGitHubPublicationSelectionRejectedError(error)?.idempotencyKey ===
-              attempt.idempotencyKey
+            this.rejectedSelectionKey(error) === attempt.idempotencyKey
           ) {
             this.owner.release();
             this.attempt = null;
@@ -484,7 +511,7 @@ export class GitHubPublicationOwner {
     }
     await this.run(presentation, "confirm", async (scope, current) => {
       const result = await scope.client.request<SessionGitHubPublicationResult>(
-        "sessions.github.confirm",
+        this.method("confirm"),
         {
           ...scope.target,
           requestId,
@@ -522,6 +549,12 @@ export class GitHubPublicationOwner {
       return undefined;
     };
     return {
+      provider: this.provider,
+      target: (
+        this.options as
+          | (GitHubPublicationOptions & { target?: RepositoryPublicationTarget | null })
+          | null
+      )?.target,
       readiness: {
         read: this.readCompletion?.promise ?? null,
         retired: presentation.lifetime.promise,

@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js";
 /* @vitest-environment jsdom */
 import { expect, it, vi } from "vitest";
 import { createDeferredCore } from "../../../../src/shared/deferred.js";
@@ -85,9 +86,17 @@ function mount(
       runExternalMutation: vi.fn(),
     },
   } as unknown as ApplicationContext;
-  const { container: element } = mountSolid(GitHubConnections, {
-    wrapper: createSolidApplicationContextProvider(context).wrapper,
-  });
+  let triggerConnect!: () => void;
+  const { container: element } = mountSolid(
+    () => {
+      const [connectRequest, setConnectRequest] = createSignal(0);
+      triggerConnect = () => setConnectRequest((value) => value + 1);
+      return <GitHubConnections connectRequest={connectRequest()} />;
+    },
+    {
+      wrapper: createSolidApplicationContextProvider(context).wrapper,
+    },
+  );
   const query = element.querySelector.bind(element);
   const button = (label: string) =>
     [...element.querySelectorAll("button")].find((entry) => entry.textContent?.trim() === label)!;
@@ -100,6 +109,7 @@ function mount(
     waitText: (...args: Parameters<typeof text>) => waitForFast(() => text(...args)),
     row: (scope: string) => query(`[data-github-connection="${scope}"]`),
     button,
+    triggerConnect,
     openPat: () =>
       ["Change System GitHub", "Use a PAT instead"].forEach((label) => {
         button(label).click();
@@ -115,6 +125,16 @@ function mount(
     },
   };
 }
+
+it("opens the existing personal setup when selected from Add provider", async () => {
+  const ui = mount(["operator.read"], "profile-a", statusRequest());
+  await waitForFast(() => expect(ui.button("Manage connections").disabled).toBe(false));
+  expect(ui.query("[data-github-setup]")).toBeNull();
+  ui.triggerConnect();
+  flush();
+  await waitForFast(() => expect(ui.query("[data-github-setup]")).not.toBeNull());
+  expect(ui.query("[data-github-setup]")?.textContent).toContain("For me");
+});
 
 it.each([
   ["unchanged", ["operator.admin"]],

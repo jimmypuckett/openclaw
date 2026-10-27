@@ -1,6 +1,7 @@
 import type { GitHubPublicationSourcePredicate } from "./github-publication-source-contract.js";
 import type {
   GitHubPublicationInsert,
+  GitLabPersonalPublicationMutation,
   PersonalPublicationMutation,
   PublicationMaintenanceMutation,
   PublicationMutationReceipt,
@@ -32,6 +33,10 @@ export type PublicationWorkerOperations = {
   };
   "githubPublications.personal": {
     input: MutationInput<PersonalPublicationMutation>;
+    output: PublicationMutationReceipt;
+  };
+  "githubPublications.gitlabPersonal": {
+    input: MutationInput<GitLabPersonalPublicationMutation>;
     output: PublicationMutationReceipt;
   };
   "githubPublications.repository": {
