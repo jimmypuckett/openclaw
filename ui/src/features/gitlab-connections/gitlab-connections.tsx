@@ -1,4 +1,4 @@
-import { createMemo, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, onSettled, Show } from "solid-js";
 import {
   SettingsRow,
   SettingsSection,
@@ -17,11 +17,12 @@ export function GitLabConnections(
   } = {},
 ) {
   const context = useApplication();
+  const [setupOpen, setSetupOpen] = createSignal(false);
   const state = new GitLabConnectionsState();
   const projection = projectOwner(state, (owner) => owner.view);
   const view = createMemo(() => projection.read());
   onSettled(() => {
-    props.onConnectReady?.(() => void state.start());
+    props.onConnectReady?.(() => setSetupOpen(true));
     const notifyAvailability = () => {
       props.onAvailable?.(state.view.eligible && state.view.status?.configured === true);
     };
@@ -45,10 +46,18 @@ export function GitLabConnections(
     <Show when={view().eligible && (view().status?.configured || view().error)}>
       <div data-gitlab-connections="personal">
         <SettingsSection
-          title="GitLab"
-          description="Connect your own GitLab account for repository publishing."
+          title="GitLab connections"
+          description="Check your connected GitLab account for repository publishing."
           actions={
             <Show when={view().status?.configured}>
+              <button
+                type="button"
+                class="btn btn--sm"
+                disabled={view().busy || view().loading}
+                onClick={() => setSetupOpen(true)}
+              >
+                Manage connections
+              </button>
               <button
                 type="button"
                 class="btn btn--sm"
@@ -57,7 +66,7 @@ export function GitLabConnections(
                   void state.loadStatus();
                 }}
               >
-                Refresh
+                Verify
               </button>
             </Show>
           }
@@ -81,31 +90,45 @@ export function GitLabConnections(
           </Show>
           <Show when={view().status?.configured}>
             <SettingsRow
-              title="Current publisher"
+              title="My GitLab"
               description={
                 view().status?.connected && view().status?.account
                   ? `GitLab publications use @${view().status!.account!.login}.`
-                  : view().status?.reconnectRequired
-                    ? "Reconnect your GitLab account before publishing."
-                    : "No GitLab account connected."
+                  : view().status?.verificationUnavailable
+                    ? "Could not verify your GitLab account. Try Verify again."
+                    : view().status?.reconnectRequired
+                      ? "Reconnect your GitLab account before publishing."
+                      : "No GitLab account connected."
               }
               control={
-                <SettingsStatus
-                  kind={
-                    view().status?.connected
-                      ? "ok"
-                      : view().status?.reconnectRequired
-                        ? "warn"
-                        : "muted"
-                  }
-                  label={
-                    view().status?.connected
-                      ? "Connected"
-                      : view().status?.reconnectRequired
-                        ? "Reconnect required"
-                        : "Disconnected"
-                  }
-                />
+                <>
+                  <SettingsStatus
+                    kind={
+                      view().status?.connected
+                        ? "ok"
+                        : view().status?.reconnectRequired
+                          ? "warn"
+                          : "muted"
+                    }
+                    label={
+                      view().status?.connected
+                        ? "Connected"
+                        : view().status?.verificationUnavailable
+                          ? "Verification unavailable"
+                          : view().status?.reconnectRequired
+                            ? "Reconnect required"
+                            : "Disconnected"
+                    }
+                  />
+                  <button
+                    type="button"
+                    class="btn btn--sm"
+                    disabled={view().busy || view().loading}
+                    onClick={() => setSetupOpen(true)}
+                  >
+                    {view().status?.connected ? "Change My GitLab" : "Connect My GitLab"}
+                  </button>
+                </>
               }
             />
             <Show when={view().status?.connected && view().status?.account}>
@@ -115,56 +138,66 @@ export function GitLabConnections(
                 control={<SettingsValue value={`@${view().status!.account!.login}`} />}
               />
             </Show>
-            <SettingsRow
-              title="Authorization"
-              description="Sign in through GitLab. You will return here to finish connecting automatically."
-              control={
-                <button
-                  type="button"
-                  class="btn btn--sm"
-                  disabled={view().busy}
-                  onClick={() => {
-                    void state.start();
-                  }}
-                >
-                  {view().status?.connected ? "Reconnect GitLab" : "Connect GitLab"}
-                </button>
-              }
-            />
-            <Show when={view().pending}>
+            <Show when={setupOpen()}>
               <SettingsRow
-                title="Continue in GitLab"
-                description="Open GitLab in a new tab and approve access for your account."
-                control={
-                  <a
-                    class="btn btn--sm"
-                    href={view().pending!.authorizationUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open GitLab sign-in
-                  </a>
-                }
-              />
-              <SettingsRow
-                title="Finish connection"
-                description="After authorizing in GitLab, the returned Profile page completes your connection automatically. Refresh this page to see the connected account."
-              />
-            </Show>
-            <Show when={view().status?.connected || view().pending}>
-              <SettingsRow
-                title="Disconnect GitLab"
-                description="Removes this profile’s selected GitLab account."
+                title="GitLab authorization"
+                description="Sign in through GitLab. You will return here to finish connecting automatically."
                 control={
                   <button
                     type="button"
                     class="btn btn--sm"
                     disabled={view().busy}
                     onClick={() => {
-                      void state.disconnect();
+                      void state.start();
                     }}
                   >
-                    Disconnect
+                    Continue with GitLab
+                  </button>
+                }
+              />
+              <Show when={view().pending}>
+                <SettingsRow
+                  title="Continue in GitLab"
+                  description="Open GitLab in a new tab and approve access for your account."
+                  control={
+                    <a
+                      class="btn btn--sm"
+                      href={view().pending!.authorizationUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open GitLab sign-in
+                    </a>
+                  }
+                />
+                <SettingsRow
+                  title="Finish connection"
+                  description="After authorizing in GitLab, the returned Profile page completes your connection automatically. Refresh this page to see the connected account."
+                />
+              </Show>
+              <Show when={view().status?.connected || view().pending}>
+                <SettingsRow
+                  title="Disconnect GitLab"
+                  description="Removes this profile’s selected GitLab account."
+                  control={
+                    <button
+                      type="button"
+                      class="btn btn--sm"
+                      disabled={view().busy}
+                      onClick={() => {
+                        void state.disconnect();
+                      }}
+                    >
+                      Disconnect
+                    </button>
+                  }
+                />
+              </Show>
+              <SettingsRow
+                title="Only your selected connection changes."
+                control={
+                  <button type="button" class="btn btn--sm" onClick={() => setSetupOpen(false)}>
+                    Close
                   </button>
                 }
               />

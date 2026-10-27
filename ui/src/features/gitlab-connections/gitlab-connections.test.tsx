@@ -116,6 +116,11 @@ it("opens the existing browser authorization when selected from Add provider", a
   await waitForSolid(() => expect(available).toHaveBeenCalledWith(true));
   connect();
   flush();
+  await waitForSolid(() => expect(ui.container.textContent).toContain("Continue with GitLab"));
+  expect(request).not.toHaveBeenCalledWith("users.gitlab.authorize.start", {});
+  [...ui.container.querySelectorAll("button")]
+    .find((button) => button.textContent?.trim() === "Continue with GitLab")!
+    .click();
   await waitForSolid(() =>
     expect(request).toHaveBeenCalledWith("users.gitlab.authorize.start", {}),
   );
@@ -135,6 +140,8 @@ it("shows the verified personal publisher and disconnects without a fallback", a
   );
   expect(ui.container.textContent).not.toContain("alice@example.test");
   expect(ui.container.textContent).toContain(issuer);
+  ui.button("Manage connections")?.click();
+  flush();
   ui.button("Disconnect")?.click();
   await waitForSolid(() =>
     expect(ui.container.textContent).toContain("No GitLab account connected"),
@@ -156,8 +163,10 @@ it("uses the Gateway-generated sign-in URL without a pasted-code form", async ()
         },
   );
   const ui = mount(request);
-  await waitForSolid(() => expect(ui.button("Connect GitLab")).toBeDefined());
-  ui.button("Connect GitLab")?.click();
+  await waitForSolid(() => expect(ui.button("Connect My GitLab")).toBeDefined());
+  ui.button("Connect My GitLab")?.click();
+  flush();
+  ui.button("Continue with GitLab")?.click();
   await waitForSolid(() =>
     expect(ui.container.querySelector("a[href*='/oauth/authorize']")).not.toBeNull(),
   );
@@ -222,8 +231,10 @@ it("drops late status and authorization after the profile changes", async () => 
     return lateStart.promise;
   });
   const ui = mount(request);
-  await waitForSolid(() => expect(ui.button("Connect GitLab")).toBeDefined());
-  ui.button("Connect GitLab")?.click();
+  await waitForSolid(() => expect(ui.button("Connect My GitLab")).toBeDefined());
+  ui.button("Connect My GitLab")?.click();
+  flush();
+  ui.button("Continue with GitLab")?.click();
   await waitForSolid(() =>
     expect(request).toHaveBeenCalledWith("users.gitlab.authorize.start", {}),
   );
@@ -283,11 +294,49 @@ it("rejects an authorization link outside the configured GitLab issuer", async (
         },
   );
   const ui = mount(request);
-  await waitForSolid(() => expect(ui.button("Connect GitLab")).toBeDefined());
-  ui.button("Connect GitLab")?.click();
+  await waitForSolid(() => expect(ui.button("Connect My GitLab")).toBeDefined());
+  ui.button("Connect My GitLab")?.click();
+  flush();
+  ui.button("Continue with GitLab")?.click();
   await waitForSolid(() =>
     expect(ui.container.textContent).toContain("Could not start GitLab sign-in"),
   );
   expect(ui.container.querySelector("a[href*='/oauth/authorize']")).toBeNull();
+  ui.unmount();
+});
+
+it("manages setup without mutating credentials and verifies through the status owner", async () => {
+  const request = vi.fn(async () => connected);
+  const ui = mount(request);
+  await waitForSolid(() => expect(ui.button("Manage connections")).toBeDefined());
+  expect(ui.button("Continue with GitLab")).toBeUndefined();
+  request.mockClear();
+  ui.button("Manage connections")!.click();
+  flush();
+  expect(ui.button("Continue with GitLab")).toBeDefined();
+  expect(request).not.toHaveBeenCalled();
+  ui.button("Close")!.click();
+  flush();
+  expect(ui.button("Continue with GitLab")).toBeUndefined();
+  ui.button("Verify")!.click();
+  await waitForSolid(() => expect(request).toHaveBeenCalledWith("users.gitlab.status", {}));
+  ui.unmount();
+});
+
+it("offers verification retry without demanding reconnection during a provider outage", async () => {
+  const request = vi.fn(async (_method: string) => ({
+    ...connected,
+    connected: false,
+    reconnectRequired: false,
+    verificationUnavailable: true,
+  }));
+  const ui = mount(request);
+  await waitForSolid(() => expect(ui.container.textContent).toContain("Verification unavailable"));
+  expect(ui.container.textContent).toContain("Try Verify again");
+  expect(ui.container.textContent).not.toContain("Reconnect required");
+  expect(ui.container.textContent).not.toContain("No GitLab account connected");
+  ui.button("Verify")!.click();
+  await waitForSolid(() => expect(request).toHaveBeenCalledTimes(2));
+  expect(request.mock.calls.every(([method]) => method === "users.gitlab.status")).toBe(true);
   ui.unmount();
 });

@@ -108,9 +108,23 @@ export const gitLabHandlers: GatewayRequestHandlers = {
         return;
       }
       await personal(options, async (action, service) => {
-        const status = await service.status(action);
+        let status = await service.status(action);
+        let verificationUnavailable = false;
+        if (status.connected) {
+          try {
+            // Like GitHub status, prove the selected account can still authenticate.
+            await service.credential(action);
+            status = await service.status(action);
+          } catch {
+            action.assertCurrent();
+            const current = await service.status(action);
+            verificationUnavailable = current.connected;
+            status = { ...current, connected: false };
+          }
+        }
         return {
           ...status,
+          verificationUnavailable,
           account: status.account
             ? { accountId: status.account.accountId, login: status.account.login }
             : null,

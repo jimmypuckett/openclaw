@@ -166,6 +166,25 @@ it("links two humans through registered RPC, rejects cross-person/replayed callb
       expect(aliceCredential.account.accountId).toBe(101);
       expect(bobCredential.account.accountId).toBe(202);
       fetcher.mockClear();
+      expect((await rpc(clients[0]!, "users.gitlab.status"))[1]).toMatchObject({
+        connected: true,
+        account: { accountId: 101, login: "alice" },
+      });
+      expect(fetcher).toHaveBeenCalled();
+      fetcher.mockRejectedValueOnce(new Error("Synthetic provider outage"));
+      expect((await rpc(clients[0]!, "users.gitlab.status"))[1]).toMatchObject({
+        connected: false,
+        verificationUnavailable: true,
+        reconnectRequired: false,
+      });
+      aliceCredential.assertCurrent();
+      expect((await rpc(clients[0]!, "users.gitlab.status"))[1]).toMatchObject({
+        connected: true,
+        verificationUnavailable: false,
+        account: { accountId: 101, login: "alice" },
+      });
+      expect((await rpc(clients[1]!, "users.gitlab.status"))[1]).toMatchObject({ connected: true });
+      fetcher.mockClear();
       const rejectedSelection = await rpc(clients[0]!, "sessions.gitlab.publish", {
         sessionKey: "agent:main:gitlab-shared",
         idempotencyKey: "rejected-shared-selection",
@@ -210,6 +229,17 @@ it("links two humans through registered RPC, rejects cross-person/replayed callb
       expect(aliceCredential.assertCurrent).toThrow();
       await expect(service.credential(alice)).rejects.toThrow();
       clients[0]!.invalidated = false;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 3 * 60 * 60 * 1000);
+      fetcher.mockRejectedValueOnce(new Error("Synthetic refresh failure"));
+      try {
+        expect((await rpc(clients[0]!, "users.gitlab.status"))[1]).toMatchObject({
+          connected: false,
+          reconnectRequired: true,
+          verificationUnavailable: false,
+        });
+      } finally {
+        clock.mockRestore();
+      }
       expect((await rpc(clients[0]!, "users.gitlab.disconnect"))[0]).toBe(true);
       expect(aliceCredential.assertCurrent).toThrow();
       bobCredential.assertCurrent();

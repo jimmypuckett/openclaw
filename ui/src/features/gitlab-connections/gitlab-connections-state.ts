@@ -14,6 +14,7 @@ export type GitLabConnectionStatus = {
   } | null;
   scopes?: string[];
   reconnectRequired?: boolean;
+  verificationUnavailable?: boolean;
 };
 
 type PendingAuthorization = {
