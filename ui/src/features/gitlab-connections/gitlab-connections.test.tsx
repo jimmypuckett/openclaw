@@ -181,6 +181,8 @@ it("uses the Gateway-generated sign-in URL without a pasted-code form", async ()
   );
   const ui = mount(request);
   await waitForSolid(() => expect(ui.button("Connect My GitLab")).toBeDefined());
+  expect(ui.container.textContent).toContain("GitLab server");
+  expect(ui.container.textContent).toContain(issuer);
   ui.button("Connect My GitLab")?.click();
   flush();
   ui.button("Continue with GitLab")?.click();

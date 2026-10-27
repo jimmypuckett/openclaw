@@ -7,11 +7,15 @@ import {
   SettingsSegmented,
   SettingsValue,
 } from "../../components/solid/settings-ui.tsx";
+import { registerProfileEnglish } from "../../i18n/locales/en-profile.ts";
 import { useApplication } from "../../lib/reactive/context.ts";
+import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
 import { GitLabConnectionsState } from "./gitlab-connections-state.ts";
 import { GitLabManagedIdentity } from "./gitlab-managed-identity-view.tsx";
 import { GitLabManagedIdentityState } from "./gitlab-managed-identity.ts";
+
+registerEnglishCatalog(registerProfileEnglish);
 
 /** User-bound GitLab identity for repository publishing. */
 export function GitLabConnections(
@@ -125,6 +129,10 @@ export function GitLabConnections(
             />
           </Show>
           <Show when={view().status?.configured}>
+            <SettingsRow
+              title={t("profilePage.gitConnections.gitlabServer")}
+              description={view().status?.issuer}
+            />
             <SettingsRow
               title="My GitLab"
               description={

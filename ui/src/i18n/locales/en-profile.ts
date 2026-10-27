@@ -13,6 +13,7 @@ const enProfile = {
       chooseProvider: "Choose the account you want to use for repository publishing.",
       github: "GitHub",
       gitlab: "GitLab",
+      gitlabServer: "GitLab server",
       githubDescription: "Connect your personal GitHub account.",
       gitlabDescription: "Connect your personal GitLab account.",
       connectGithub: "Connect GitHub",
