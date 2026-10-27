@@ -51,3 +51,28 @@ it("resets an edited server draft when the configured issuer changes", () => {
   expect(input.value).toBe("https://second.example.test");
   screen.unmount();
 });
+
+it("preserves an entered URL when unrelated connection status refreshes", () => {
+  let refreshStatus: () => void = () => {};
+  const screen = mountSolid(() => {
+    const [status, setStatus] = createSignal({ issuer: "https://first.example.test", busy: false });
+    refreshStatus = () => setStatus({ issuer: "https://first.example.test", busy: false });
+    return (
+      <GitLabServerAuthorization
+        issuer={status().issuer}
+        disabled={status().busy}
+        title="GitLab authorization"
+        description="Connect your account."
+        onContinue={refreshStatus}
+      />
+    );
+  });
+  const input = screen.getByRole<HTMLInputElement>("textbox", { name: "GitLab server URL" });
+  input.value = "https://draft.example.test";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  flush();
+  screen.getByRole<HTMLButtonElement>("button", { name: "Continue with GitLab" }).click();
+  flush();
+  expect(input.value).toBe("https://draft.example.test");
+  screen.unmount();
+});

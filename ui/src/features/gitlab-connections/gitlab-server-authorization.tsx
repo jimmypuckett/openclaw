@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { createMemo, createSignal } from "solid-js";
 import { SettingsRow } from "../../components/solid/settings-ui.tsx";
 import { registerProfileEnglish } from "../../i18n/locales/en-profile.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
@@ -13,7 +13,8 @@ export function GitLabServerAuthorization(props: {
   description: string;
   onContinue: (serverUrl: string) => void;
 }) {
-  const [serverUrl, setServerUrl] = createSignal(() => props.issuer ?? "");
+  const configuredIssuer = createMemo(() => props.issuer ?? "");
+  const [serverUrl, setServerUrl] = createSignal(() => configuredIssuer());
   return (
     <>
       <SettingsRow
