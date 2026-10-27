@@ -164,6 +164,7 @@ export function createRuntimeProcessEntrypoints(currentModuleUrl: string) {
     ),
     stateMigrationSnapshot: runtimeProcessEntrypoint("infra/state-migrations.snapshot.worker"),
     githubExec: runtimeProcessEntrypoint("agents/github-exec-launcher"),
+    gitlabExec: runtimeProcessEntrypoint("agents/gitlab-exec-launcher"),
     shellSnapshotEnvironment: runtimeProcessEntrypoint("agents/shell-snapshot-env.worker"),
     sqliteReadOnly: runtimeProcessEntrypoint("infra/sqlite-readonly-location.worker"),
     sqliteSnapshotStaging: runtimeProcessEntrypoint("infra/sqlite-snapshot-staging.worker"),
@@ -502,6 +503,7 @@ export function runtimeProcessDeployEntryFileName<
 export const runtimeProcessHelperManifest = {
   "workspace-rsync-receiver": { source: "src/worker/workspace-rsync-receiver.ts", sealed: false },
   "github-exec-launcher": { source: "src/agents/github-exec-launcher.ts", sealed: false },
+  "gitlab-exec-launcher": { source: "src/agents/gitlab-exec-launcher.ts", sealed: false },
   "service-child-relay": { source: "src/process/supervisor/service-child-relay.ts", sealed: true },
   "service-child-group-anchor": {
     source: "src/process/supervisor/service-child-group-anchor.ts",
@@ -522,6 +524,7 @@ export const runtimeProcessSealedManifest = {
       ["fileToolRead", "file-tool-read.worker"],
       ["gatewayStateOwnerHeartbeat", "gateway-state-owner-heartbeat.worker"],
       ["githubExec", "github-exec-launcher"],
+      ["gitlabExec", "gitlab-exec-launcher"],
       ["imageProcessor", "image-processor.worker"],
       ["serviceChildRelay", "service-child-relay"],
       ["sqliteSourceRevision", "sqlite-source-revision.worker"],
