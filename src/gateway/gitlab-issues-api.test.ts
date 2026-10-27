@@ -82,6 +82,40 @@ describe("requester-bound GitLab issue API", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it.each(["issues", "work_items"])("accepts the exact GitLab %s issue route", async (route) => {
+    const webUrl = `${projectUrl}/-/${route}/12`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL) =>
+        input.pathname.includes("/projects/team%2Fapp")
+          ? json(project)
+          : json(issue({ web_url: webUrl })),
+      ),
+    );
+    await expect(run({ action: "issue.get", projectUrl, iid: 12 })).resolves.toMatchObject({
+      item: { iid: 12, webUrl },
+    });
+  });
+
+  it.each([
+    `${issuer}/other/project/-/work_items/12`,
+    `${projectUrl}/-/work_items/13`,
+    `${projectUrl}/-/work_items/12?redirect=1`,
+    `https://foreign.example.test/team/app/-/work_items/12`,
+  ])("rejects a mismatched issue work-item URL %s", async (webUrl) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL) =>
+        input.pathname.includes("/projects/team%2Fapp")
+          ? json(project)
+          : json(issue({ web_url: webUrl })),
+      ),
+    );
+    await expect(run({ action: "issue.get", projectUrl, iid: 12 })).rejects.toThrow(
+      "GitLab issue URL changed",
+    );
+  });
+
   it("uses only the selected person's token and verifies the project before issue creation", async () => {
     const calls: { url: string; authorization: string | null; method: string; body: unknown }[] =
       [];

@@ -145,6 +145,18 @@ export function linkedIssueProjectId(value: unknown): number {
   return positiveId(value.project_id, "linked issue project");
 }
 
+// GitLab may return either the issue route or its native work-item route.
+// Both must identify this exact project and IID; never accept an arbitrary URL.
+function issueWebUrl(value: unknown, project: Project, iid: number): string {
+  for (const route of ["issues", "work_items"]) {
+    const expected = new URL(`-/${route}/${iid}`, `${project.webUrl}/`).toString();
+    if (value === expected) {
+      return expected;
+    }
+  }
+  throw new Error("GitLab issue URL changed or response is invalid.");
+}
+
 export function parseListedIssueLink(
   value: unknown,
   source: Issue,
@@ -154,8 +166,8 @@ export function parseListedIssueLink(
     throw new Error("GitLab issue link target changed.");
   }
   const targetIid = positiveId(value.iid, "linked issue");
-  const targetWebUrl = new URL(`-/issues/${targetIid}`, `${linkedProject.webUrl}/`).toString();
-  if (value.web_url !== targetWebUrl || (value.state !== "opened" && value.state !== "closed")) {
+  const targetWebUrl = issueWebUrl(value.web_url, linkedProject, targetIid);
+  if (value.state !== "opened" && value.state !== "closed") {
     throw new Error("GitLab issue link URL changed.");
   }
   return {
@@ -238,10 +250,9 @@ export function parseIssue(value: unknown, project: Project): Issue {
     throw new Error("GitLab issue response is invalid.");
   }
   const iid = positiveId(value.iid, "issue");
-  const webUrl = new URL(`-/issues/${iid}`, `${project.webUrl}/`).toString();
+  const webUrl = issueWebUrl(value.web_url, project, iid);
   if (
     value.project_id !== project.id ||
-    value.web_url !== webUrl ||
     (value.state !== "opened" && value.state !== "closed") ||
     value.labels.some((label) => typeof label !== "string") ||
     !Array.isArray(value.assignees) ||

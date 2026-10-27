@@ -236,97 +236,100 @@ describe("requester issue workflows against documented GitLab response shapes", 
     ]);
   });
 
-  it("lists and creates links only after both canonical projects and issues pass live policy", async () => {
-    const calls: { path: string; method: string; body?: unknown; auth: string | null }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: URL, init: RequestInit) => {
-        const body = typeof init.body === "string" ? JSON.parse(init.body) : undefined;
-        calls.push({
-          path: input.pathname,
-          method: init.method ?? "GET",
-          body,
-          auth: new Headers(init.headers).get("authorization"),
-        });
-        if (input.pathname === "/api/v4/projects/team%2Fapp") {
-          return json(project);
-        }
-        if (
-          input.pathname === "/api/v4/projects/team%2Fother" ||
-          input.pathname === "/api/v4/projects/92"
-        ) {
-          return json(targetProject);
-        }
-        if (input.pathname === "/api/v4/projects/91/issues/12") {
-          return json(issue());
-        }
-        if (input.pathname === "/api/v4/projects/92/issues/5") {
-          return json(issue(92, 5));
-        }
-        if (input.pathname === "/api/v4/projects/91/issues/12/links" && init.method === "POST") {
-          return json({
-            id: 7,
-            source_issue: { id: 501, iid: 12, project_id: 91 },
-            target_issue: { id: 502, iid: 5, project_id: 92 },
-            link_type: "blocks",
+  it.each(["issues", "work_items"])(
+    "lists and creates %s links only after both canonical projects and issues pass live policy",
+    async (route) => {
+      const calls: { path: string; method: string; body?: unknown; auth: string | null }[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: URL, init: RequestInit) => {
+          const body = typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+          calls.push({
+            path: input.pathname,
+            method: init.method ?? "GET",
+            body,
+            auth: new Headers(init.headers).get("authorization"),
           });
-        }
-        if (input.pathname === "/api/v4/projects/91/issues/12/links" && init.method === "GET") {
-          return json([
-            {
-              id: 502,
-              iid: 5,
-              project_id: 92,
-              web_url: `${targetProjectUrl}/-/issues/5`,
-              issue_link_id: 7,
+          if (input.pathname === "/api/v4/projects/team%2Fapp") {
+            return json(project);
+          }
+          if (
+            input.pathname === "/api/v4/projects/team%2Fother" ||
+            input.pathname === "/api/v4/projects/92"
+          ) {
+            return json(targetProject);
+          }
+          if (input.pathname === "/api/v4/projects/91/issues/12") {
+            return json(issue());
+          }
+          if (input.pathname === "/api/v4/projects/92/issues/5") {
+            return json(issue(92, 5));
+          }
+          if (input.pathname === "/api/v4/projects/91/issues/12/links" && init.method === "POST") {
+            return json({
+              id: 7,
+              source_issue: { id: 501, iid: 12, project_id: 91 },
+              target_issue: { id: 502, iid: 5, project_id: 92 },
               link_type: "blocks",
-              title: "Investigate retry",
-              state: "opened",
-            },
-          ]);
-        }
-        throw new Error(`Unexpected ${init.method} ${input.pathname}`);
-      }),
-    );
-    const allowed: number[] = [];
-    const policy = (id: number) => {
-      allowed.push(id);
-      expect([91, 92]).toContain(id);
-    };
-    expect(
-      await run(
-        {
-          action: "issue.link.create",
-          projectUrl,
-          iid: 12,
-          targetProjectUrl,
-          targetIid: 5,
+            });
+          }
+          if (input.pathname === "/api/v4/projects/91/issues/12/links" && init.method === "GET") {
+            return json([
+              {
+                id: 502,
+                iid: 5,
+                project_id: 92,
+                web_url: `${targetProjectUrl}/-/${route}/5`,
+                issue_link_id: 7,
+                link_type: "blocks",
+                title: "Investigate retry",
+                state: "opened",
+              },
+            ]);
+          }
+          throw new Error(`Unexpected ${init.method} ${input.pathname}`);
+        }),
+      );
+      const allowed: number[] = [];
+      const policy = (id: number) => {
+        allowed.push(id);
+        expect([91, 92]).toContain(id);
+      };
+      expect(
+        await run(
+          {
+            action: "issue.link.create",
+            projectUrl,
+            iid: 12,
+            targetProjectUrl,
+            targetIid: 5,
+            relation: "blocks",
+          },
+          policy,
+        ),
+      ).toMatchObject({
+        actor: { accountId: 11 },
+        item: {
+          sourceIssueId: 501,
+          targetIssueId: 502,
+          targetProjectId: 92,
+          linkId: 7,
           relation: "blocks",
         },
-        policy,
-      ),
-    ).toMatchObject({
-      actor: { accountId: 11 },
-      item: {
-        sourceIssueId: 501,
-        targetIssueId: 502,
-        targetProjectId: 92,
-        linkId: 7,
-        relation: "blocks",
-      },
-      effect: { remoteId: 7 },
-    });
-    expect(await run({ action: "issue.link.list", projectUrl, iid: 12 }, policy)).toMatchObject({
-      items: [{ targetIssueId: 502, targetProjectId: 92, targetIid: 5, linkId: 7 }],
-    });
-    expect(allowed).toContain(92);
-    expect(calls.find((call) => call.method === "POST")?.body).toEqual({
-      target_project_id: 92,
-      target_issue_iid: 5,
-      link_type: "blocks",
-    });
-    expect(calls.every((call) => call.auth === "Bearer alice-secret")).toBe(true);
-  });
+        effect: { remoteId: 7 },
+      });
+      expect(await run({ action: "issue.link.list", projectUrl, iid: 12 }, policy)).toMatchObject({
+        items: [{ targetIssueId: 502, targetProjectId: 92, targetIid: 5, linkId: 7 }],
+      });
+      expect(allowed).toContain(92);
+      expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+        target_project_id: 92,
+        target_issue_iid: 5,
+        link_type: "blocks",
+      });
+      expect(calls.every((call) => call.auth === "Bearer alice-secret")).toBe(true);
+    },
+  );
 
   it("rejects foreign linked origins before fetch and hides links excluded by target policy", async () => {
     const fetcher = vi.fn(async (input: URL) => {
