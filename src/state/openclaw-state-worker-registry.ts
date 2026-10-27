@@ -93,6 +93,14 @@ const loaders = {
     import("../secrets/store/secret-store-github-handoff.worker.js").then(
       (m) => m.githubSetupOperations,
     ),
+  gitlabManagedSecrets: () =>
+    import("../secrets/store/secret-store-gitlab-managed.worker.js").then(
+      (m) => m.gitlabManagedOperations,
+    ),
+  gitlabManagedSetup: () =>
+    import("../secrets/store/secret-store-gitlab-managed.worker.js").then(
+      (m) => m.gitlabManagedOperations,
+    ),
   agentDatabaseRegistry: () =>
     import("./openclaw-agent-db-registry.worker.js").then((m) => m.agentDatabaseRegistryOperations),
   authProfiles: () =>

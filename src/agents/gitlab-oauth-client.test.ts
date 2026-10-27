@@ -120,6 +120,23 @@ describe("GitLab personal OAuth client", () => {
     await expect(verifyGitLabAccount(config, tokens)).rejects.toThrow("could not be verified");
   });
 
+  it("permits a verified bot actor only for an explicit managed caller", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(respond(info()))
+      .mockResolvedValueOnce(respond(account({ bot: true, username: "service-bot" })));
+    const tokens = {
+      accessToken: "synthetic-access",
+      refreshToken: "synthetic-refresh",
+      expiresAtMs: Date.now() + 7200000,
+      scopes: ["api", "write_repository"],
+    };
+    await expect(verifyGitLabAccount(config, tokens, { allowBot: true })).resolves.toMatchObject({
+      login: "service-bot",
+      commitEmail: "alice@example.test",
+      issuer: config.issuer,
+    });
+  });
+
   it("rechecks authority after network wait and before token-info dispatch", async () => {
     let release!: (response: Response) => void;
     const pending = new Promise<Response>((resolve) => {

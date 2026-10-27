@@ -281,7 +281,7 @@ export async function refreshGitLabAuthorization(
 export async function verifyGitLabAccount(
   config: GitLabOAuthConfig,
   tokens: GitLabOAuthTokens,
-  options: RequestOptions = {},
+  options: RequestOptions & { allowBot?: boolean } = {},
 ): Promise<GitLabAccount> {
   const selected = validateGitLabOAuthConfig(config);
   const accessToken = boundedString(tokens.accessToken, "access token", TOKEN_MAX_CHARS);
@@ -297,7 +297,7 @@ export async function verifyGitLabAccount(
       "account",
       options,
     );
-    if (!response.ok || body.bot === true) {
+    if (!response.ok || (body.bot === true && !options.allowBot)) {
       throw invalid("account");
     }
     const accountId = body.id;
