@@ -33,6 +33,23 @@ export type GitLabConnectionView = {
   error: string | null;
 };
 
+/** A server selection is an HTTPS origin, never a repository or authorization URL. */
+export function gitLabServerOrigin(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    return url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.pathname === "/"
+      ? url.origin
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function isGitLabAuthorizationUrl(raw: string, issuer: string | undefined): boolean {
   try {
     const url = new URL(raw);
@@ -145,9 +162,20 @@ export class GitLabConnectionsState {
     this.publish();
   }
 
-  async start() {
+  async start(serverUrl?: string) {
     const client = this.client;
     if (!client || !this.view.status?.configured || this.view.busy) {
+      return;
+    }
+    const issuer = this.view.status.issuer;
+    const selectedIssuer = serverUrl === undefined ? issuer : gitLabServerOrigin(serverUrl);
+    if (!selectedIssuer || selectedIssuer !== issuer) {
+      this.view = {
+        ...this.view,
+        pending: null,
+        error: "This GitLab server needs administrator OAuth setup before connecting.",
+      };
+      this.publish();
       return;
     }
     const generation = this.generation;
@@ -162,7 +190,7 @@ export class GitLabConnectionsState {
       if (!this.current(client, generation, sequence)) {
         return;
       }
-      if (!isGitLabAuthorizationUrl(pending.authorizationUrl, this.view.status?.issuer)) {
+      if (!isGitLabAuthorizationUrl(pending.authorizationUrl, issuer)) {
         throw new Error("Invalid GitLab authorization URL");
       }
       this.view = {

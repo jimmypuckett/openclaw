@@ -14,6 +14,10 @@ const enProfile = {
       github: "GitHub",
       gitlab: "GitLab",
       gitlabServer: "GitLab server",
+      gitlabServerUrl: "GitLab server URL",
+      gitlabServerSetup:
+        "Enter your GitLab server URL. One server is supported; its OAuth application must be configured by an administrator.",
+      gitlabContinue: "Continue with GitLab",
       githubDescription: "Connect your personal GitHub account.",
       gitlabDescription: "Connect your personal GitLab account.",
       connectGithub: "Connect GitHub",

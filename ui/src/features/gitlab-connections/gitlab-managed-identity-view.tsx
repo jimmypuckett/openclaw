@@ -5,6 +5,7 @@ import type {
   GitLabManagedIdentityView,
   GitLabManagedIdentityState,
 } from "./gitlab-managed-identity.ts";
+import { GitLabServerAuthorization } from "./gitlab-server-authorization.tsx";
 
 /** Presents the actual selected/effective account from one managed-target owner. */
 export function GitLabManagedIdentity(props: {
@@ -96,19 +97,12 @@ export function GitLabManagedIdentity(props: {
         </Show>
       </Show>
       <Show when={props.mode !== "account" && setupOpen() && view().canAdmin}>
-        <SettingsRow
+        <GitLabServerAuthorization
+          issuer={status()?.issuer}
+          disabled={locked() || Boolean(view().pending)}
           title={props.scope === "system" ? "Connect System GitLab" : "Connect agent GitLab"}
           description="Authorize the account to use for this target. Your own GitLab connection is separate."
-          control={
-            <button
-              type="button"
-              class="btn btn--sm"
-              disabled={locked()}
-              onClick={() => void props.identity.start()}
-            >
-              Continue with GitLab
-            </button>
-          }
+          onContinue={(serverUrl) => void props.identity.start(serverUrl)}
         />
         <Show when={view().pending}>
           <SettingsRow

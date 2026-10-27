@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { gatewayHelloForMethods } from "../../test-helpers/gateway-methods.ts";
-import { GitLabConnectionsState } from "./gitlab-connections-state.ts";
+import { gitLabServerOrigin, GitLabConnectionsState } from "./gitlab-connections-state.ts";
 import { GitLabManagedIdentityState } from "./gitlab-managed-identity.ts";
 
 const status = {
@@ -144,3 +144,64 @@ it("treats a lost managed completion reply as an unknown result to verify", asyn
   expect(owner.view.error).not.toContain("Start again");
   owner.dispose();
 });
+
+it("accepts only HTTPS server origins without credentials or repository paths", () => {
+  expect(gitLabServerOrigin(" https://GITLAB.example.test:443/ ")).toBe(status.issuer);
+  for (const raw of [
+    "",
+    "http://gitlab.example.test",
+    "https://user:pass@gitlab.example.test",
+    "https://gitlab.example.test/group/repo",
+    "https://gitlab.example.test?code=example",
+    "https://gitlab.example.test/#callback",
+  ]) {
+    expect(gitLabServerOrigin(raw)).toBeNull();
+  }
+});
+
+it.each(["personal", "managed"])(
+  "rejects a different selected server before starting %s OAuth",
+  async (kind) => {
+    const request = vi.fn(async () => status);
+    const owner =
+      kind === "personal" ? new GitLabConnectionsState() : new GitLabManagedIdentityState();
+    if (owner instanceof GitLabManagedIdentityState) {
+      owner.sync(snapshot(request), { scope: "system", agentId: "main" });
+    } else {
+      owner.sync(snapshot(request));
+    }
+    await settle();
+    request.mockClear();
+    await owner.start("https://other.example.test");
+    expect(request).not.toHaveBeenCalled();
+    expect(owner.view.pending).toBeNull();
+    expect(owner.view.error).toContain("administrator OAuth setup");
+    owner.dispose();
+  },
+);
+
+it.each(["personal", "managed"])(
+  "starts %s OAuth for the selected normalized server",
+  async (kind) => {
+    const pending = {
+      requestId: "gitlab-setup-" + "a".repeat(32),
+      authorizationUrl: `${status.issuer}/oauth/authorize?client_id=example`,
+      expiresAtMs: Date.now() + 60000,
+    };
+    const request = vi.fn(async (method: string) =>
+      method.endsWith("authorize.start") ? pending : status,
+    );
+    const owner =
+      kind === "personal" ? new GitLabConnectionsState() : new GitLabManagedIdentityState();
+    if (owner instanceof GitLabManagedIdentityState) {
+      owner.sync(snapshot(request), { scope: "system", agentId: "main" });
+    } else {
+      owner.sync(snapshot(request));
+    }
+    await settle();
+    await owner.start(" https://GITLAB.example.test:443/ ");
+    expect(owner.view.pending?.authorizationUrl).toBe(pending.authorizationUrl);
+    expect(owner.view.error).toBeNull();
+    owner.dispose();
+  },
+);

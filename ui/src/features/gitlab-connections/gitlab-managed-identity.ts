@@ -2,7 +2,7 @@ import type { ToolsGitLabStatusResult } from "../../../../packages/gateway-proto
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorAdminAccess, hasOperatorReadAccess } from "../../app/operator-access.ts";
-import { isGitLabAuthorizationUrl } from "./gitlab-connections-state.ts";
+import { gitLabServerOrigin, isGitLabAuthorizationUrl } from "./gitlab-connections-state.ts";
 
 export type GitLabManagedTarget = { scope: "system" | "agent"; agentId: string };
 type Pending = { requestId: string; authorizationUrl: string; expiresAtMs: number };
@@ -107,7 +107,7 @@ export class GitLabManagedIdentityState {
     }
     this.publish();
   }
-  async start() {
+  async start(serverUrl?: string) {
     const client = this.client,
       target = this.target;
     if (
@@ -119,6 +119,17 @@ export class GitLabManagedIdentityState {
     ) {
       return;
     }
+    const issuer = this.view.status.issuer;
+    const selectedIssuer = serverUrl === undefined ? issuer : gitLabServerOrigin(serverUrl);
+    if (!selectedIssuer || selectedIssuer !== issuer) {
+      this.view = {
+        ...this.view,
+        pending: null,
+        error: "This GitLab server needs administrator OAuth setup before connecting.",
+      };
+      this.publish();
+      return;
+    }
     const generation = this.generation,
       sequence = ++this.sequence;
     this.view = { ...this.view, busy: true, pending: null, error: null };
@@ -128,12 +139,7 @@ export class GitLabManagedIdentityState {
       if (!this.current(client, generation, sequence)) {
         return;
       }
-      if (
-        !isGitLabAuthorizationUrl(
-          pending.authorizationUrl,
-          this.view.status?.configured ? this.view.status.issuer : undefined,
-        )
-      ) {
+      if (!isGitLabAuthorizationUrl(pending.authorizationUrl, issuer)) {
         throw new Error("Invalid authorization URL");
       }
       this.view = { ...this.view, busy: false, pending };

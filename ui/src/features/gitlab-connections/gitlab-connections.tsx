@@ -14,6 +14,7 @@ import { projectOwner } from "../../lib/reactive/projection.ts";
 import { GitLabConnectionsState } from "./gitlab-connections-state.ts";
 import { GitLabManagedIdentity } from "./gitlab-managed-identity-view.tsx";
 import { GitLabManagedIdentityState } from "./gitlab-managed-identity.ts";
+import { GitLabServerAuthorization } from "./gitlab-server-authorization.tsx";
 
 registerEnglishCatalog(registerProfileEnglish);
 
@@ -244,21 +245,12 @@ export function GitLabConnections(
               onCloseSetup={() => setSetupOpen(false)}
             />
             <Show when={setupOpen() && purpose() === "personal"}>
-              <SettingsRow
+              <GitLabServerAuthorization
+                issuer={view().status?.issuer}
+                disabled={view().busy || Boolean(view().pending)}
                 title="GitLab authorization"
                 description="Sign in through GitLab. You will return here to finish connecting automatically."
-                control={
-                  <button
-                    type="button"
-                    class="btn btn--sm"
-                    disabled={view().busy}
-                    onClick={() => {
-                      void state.start();
-                    }}
-                  >
-                    Continue with GitLab
-                  </button>
-                }
+                onContinue={(serverUrl) => void state.start(serverUrl)}
               />
               <Show when={view().pending}>
                 <SettingsRow

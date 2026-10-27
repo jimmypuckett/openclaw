@@ -16,7 +16,7 @@ connection does not fall back to a shared account or an ambient CLI token.
 
 ## Configure the Gateway
 
-Each deployment currently configures one GitLab issuer and OAuth application. The Profile connection section shows that server before authorization. GitLab.com or another self-hosted HTTPS instance can be configured here; simultaneous connections to multiple GitLab instances are not supported. This setting is separate from choosing GitHub or GitLab as the repository provider.
+Each deployment currently configures one GitLab issuer and OAuth application. The connection form shows that server in an editable URL field before authorization. Enter the HTTPS server origin, without a repository path. A different server requires administrator OAuth application setup before connecting; entering a URL does not register an application or change the deployment configuration. GitLab.com or another self-hosted HTTPS instance can be configured here; simultaneous connections to multiple GitLab instances are not supported. This setting is separate from choosing GitHub or GitLab as the repository provider.
 
 Register a non-confidential GitLab OAuth application supporting authorization code
 with PKCE. Enable `api` and `write_repository`, and register an exact HTTPS
