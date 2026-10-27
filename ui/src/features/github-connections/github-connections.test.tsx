@@ -1,4 +1,3 @@
-import { createSignal } from "solid-js";
 /* @vitest-environment jsdom */
 import { expect, it, vi } from "vitest";
 import { createDeferredCore } from "../../../../src/shared/deferred.js";
@@ -89,9 +88,13 @@ function mount(
   let triggerConnect!: () => void;
   const { container: element } = mountSolid(
     () => {
-      const [connectRequest, setConnectRequest] = createSignal(0);
-      triggerConnect = () => setConnectRequest((value) => value + 1);
-      return <GitHubConnections connectRequest={connectRequest()} />;
+      return (
+        <GitHubConnections
+          onConnectReady={(command) => {
+            triggerConnect = command ?? (() => {});
+          }}
+        />
+      );
     },
     {
       wrapper: createSolidApplicationContextProvider(context).wrapper,

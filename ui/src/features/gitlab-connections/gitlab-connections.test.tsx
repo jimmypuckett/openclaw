@@ -1,4 +1,3 @@
-import { createSignal } from "solid-js";
 /* @vitest-environment jsdom */
 import { expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
@@ -17,9 +16,6 @@ const issuer = "https://gitlab.example.test";
 const account = {
   accountId: 47,
   login: "alice",
-  name: "Alice",
-  commitEmail: "alice@example.test",
-  issuer,
 };
 const connected = {
   configured: true,
@@ -106,9 +102,14 @@ it("opens the existing browser authorization when selected from Add provider", a
   const available = vi.fn();
   const ui = mountSolid(
     () => {
-      const [connectRequest, setConnectRequest] = createSignal(0);
-      connect = () => setConnectRequest((value) => value + 1);
-      return <GitLabConnections connectRequest={connectRequest()} onAvailable={available} />;
+      return (
+        <GitLabConnections
+          onConnectReady={(command) => {
+            connect = command ?? (() => {});
+          }}
+          onAvailable={available}
+        />
+      );
     },
     { wrapper: createSolidApplicationContextProvider({ gateway } as ApplicationContext).wrapper },
   );

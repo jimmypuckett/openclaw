@@ -11,9 +11,6 @@ export type GitLabConnectionStatus = {
   account?: {
     accountId: number;
     login: string;
-    name: string;
-    commitEmail: string;
-    issuer: string;
   } | null;
   scopes?: string[];
   reconnectRequired?: boolean;

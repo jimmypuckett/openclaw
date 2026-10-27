@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onSettled } from "solid-js";
+import { createMemo, createSignal, onSettled } from "solid-js";
 import { pathForAgentPanel } from "../../app-route-paths.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { hasOperatorAdminAccess, hasOperatorReadAccess } from "../../app/operator-access.ts";
@@ -40,7 +40,9 @@ function access(snapshot: ApplicationGatewaySnapshot) {
 }
 
 /** Profile credentials have their own read-scoped lifecycle, independent of users.self edits. */
-export function GitHubConnections(props: { connectRequest?: number } = {}) {
+export function GitHubConnections(
+  props: { onConnectReady?: (connect: (() => void) | null) => void } = {},
+) {
   const context = useApplication();
   const gateway = projectGateway(context.gateway);
   const agents = projectAgents(context.agents);
@@ -145,7 +147,11 @@ export function GitHubConnections(props: { connectRequest?: number } = {}) {
       context.runtimeConfig.subscribe(syncIdentities),
     ];
     applySnapshot(context.gateway.snapshot);
-    return () => subscriptions.forEach((unsubscribe) => unsubscribe());
+    props.onConnectReady?.(() => openSetup("personal"));
+    return () => {
+      props.onConnectReady?.(null);
+      subscriptions.forEach((unsubscribe) => unsubscribe());
+    };
   });
 
   const view = createMemo(() => {
@@ -208,14 +214,6 @@ export function GitHubConnections(props: { connectRequest?: number } = {}) {
     setSetupOpen(true);
   };
   const openSetup = (next: "personal" | "system") => openSetupWithView(next, view());
-  createEffect(
-    () => ({ request: props.connectRequest ?? 0, currentView: view() }),
-    ({ request, currentView }, previous) => {
-      if (request > 0 && request !== previous?.request) {
-        openSetupWithView("personal", currentView);
-      }
-    },
-  );
   const verify = () => {
     void personal.verify();
     void system.verify();

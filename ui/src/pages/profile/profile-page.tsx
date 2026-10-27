@@ -88,8 +88,8 @@ export function ProfilePage() {
   const agents = projectOwner(context.agents, (source) => source.state.agentsList);
   const identities = projectOwner(context.agentIdentity, (source) => source);
   const [revision, setRevision] = createSignal(0, { ownedWrite: true });
-  const [githubConnectRequest, setGithubConnectRequest] = createSignal(0);
-  const [gitlabConnectRequest, setGitlabConnectRequest] = createSignal(0);
+  let connectGitHub: (() => void) | null = null;
+  let connectGitLab: (() => void) | null = null;
   const [gitlabAvailable, setGitlabAvailable] = createSignal(false);
   const state = new ProfileState(context, () => setRevision((value) => value + 1));
   const view = () => {
@@ -599,15 +599,21 @@ export function ProfilePage() {
               gitlabAvailable={gitlabAvailable()}
               onSelect={(provider: GitProvider) => {
                 if (provider === "github") {
-                  setGithubConnectRequest((value) => value + 1);
+                  connectGitHub?.();
                 } else {
-                  setGitlabConnectRequest((value) => value + 1);
+                  connectGitLab?.();
                 }
               }}
             >
-              <GitHubConnections connectRequest={githubConnectRequest()} />
+              <GitHubConnections
+                onConnectReady={(connect) => {
+                  connectGitHub = connect;
+                }}
+              />
               <GitLabConnections
-                connectRequest={gitlabConnectRequest()}
+                onConnectReady={(connect) => {
+                  connectGitLab = connect;
+                }}
                 onAvailable={setGitlabAvailable}
               />
             </GitProviderChooser>

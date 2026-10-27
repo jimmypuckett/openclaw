@@ -1,4 +1,4 @@
-import { createEffect, createMemo, onSettled, Show } from "solid-js";
+import { createMemo, onSettled, Show } from "solid-js";
 import {
   SettingsRow,
   SettingsSection,
@@ -12,7 +12,7 @@ import { GitLabConnectionsState } from "./gitlab-connections-state.ts";
 /** User-bound GitLab identity for repository publishing. */
 export function GitLabConnections(
   props: {
-    connectRequest?: number;
+    onConnectReady?: (connect: (() => void) | null) => void;
     onAvailable?: (available: boolean) => void;
   } = {},
 ) {
@@ -20,27 +20,21 @@ export function GitLabConnections(
   const state = new GitLabConnectionsState();
   const projection = projectOwner(state, (owner) => owner.view);
   const view = createMemo(() => projection.read());
-  createEffect(
-    () => view().eligible && view().status?.configured === true,
-    (available) => {
-      props.onAvailable?.(available);
-    },
-  );
-  createEffect(
-    () => ({ request: props.connectRequest ?? 0, configured: view().status?.configured }),
-    ({ request, configured }, previous) => {
-      if (request > 0 && request !== previous?.request && configured) {
-        void state.start();
-      }
-    },
-  );
   onSettled(() => {
+    props.onConnectReady?.(() => void state.start());
+    const notifyAvailability = () => {
+      props.onAvailable?.(state.view.eligible && state.view.status?.configured === true);
+    };
+    const unsubscribeAvailability = state.subscribe(notifyAvailability);
+    notifyAvailability();
     const sync = (snapshot: typeof context.gateway.snapshot) => {
       state.sync(snapshot);
     };
     const unsubscribe = context.gateway.subscribe(sync);
     sync(context.gateway.snapshot);
     return () => {
+      props.onConnectReady?.(null);
+      unsubscribeAvailability();
       unsubscribe();
 
       state.dispose();
@@ -117,7 +111,7 @@ export function GitLabConnections(
             <Show when={view().status?.connected && view().status?.account}>
               <SettingsRow
                 title="Verified GitLab account"
-                description={`${view().status!.account!.name} · ${view().status!.account!.issuer}`}
+                description={view().status?.issuer}
                 control={<SettingsValue value={`@${view().status!.account!.login}`} />}
               />
             </Show>
