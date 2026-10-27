@@ -9,10 +9,12 @@ import { resetProcessRegistryForTests } from "./bash-process-registry.test-suppo
 import { runExecProcess } from "./bash-tools.exec-runtime.js";
 
 const boundary = vi.hoisted(() => ({ spawn: vi.fn() }));
-vi.mock("../process/supervisor/index.js", () => ({
+vi.mock("../process/supervisor/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../process/supervisor/index.js")>()),
   getProcessSupervisor: () => ({ spawn: boundary.spawn }),
 }));
-vi.mock("./shell-snapshot.js", () => ({
+vi.mock("./shell-snapshot.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./shell-snapshot.js")>()),
   maybeWrapCommandWithShellSnapshot: async (input: { command: string }) => input.command,
 }));
 

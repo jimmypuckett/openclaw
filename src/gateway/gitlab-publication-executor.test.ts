@@ -40,7 +40,8 @@ const { previous, head, baseTree, workspaceTree, run, close, observeHead, push }
     };
   },
 );
-vi.mock("./gitlab-publication-git.js", () => ({
+vi.mock("./gitlab-publication-git.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./gitlab-publication-git.js")>()),
   prepareGitLabPublicationGit: vi.fn(async () => ({
     headCommit: head,
     directory: "/synthetic/quarantine",

@@ -37,7 +37,9 @@ export function parseGitLabOAuthCallback(
 export function managedGitLabCallbackRequestId(callbackUrl: string): string | null {
   try {
     const states = new URL(callbackUrl).searchParams.getAll("state");
-    if (states.length !== 1) {return null;}
+    if (states.length !== 1) {
+      return null;
+    }
     return (
       /^gitlab-managed\.(gitlab-setup-[a-f0-9]{32})\.[A-Za-z0-9_-]{43}$/u.exec(states[0]!)?.[1] ??
       null

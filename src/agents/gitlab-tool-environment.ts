@@ -38,23 +38,22 @@ export function prepareGitLabToolEnvironment(params: {
       scrub[key] = "";
     }
   }
+  const localIdentityEnv: Record<string, string> = selected
+    ? {
+        GLAB_CONFIG_DIR: resolveManagedGitLabProfileDir({
+          ...params,
+          scope: selected.scope,
+          profileId: selected.identity.profileId,
+        }),
+        GITLAB_HOST: new URL(selected.identity.issuer).host,
+      }
+    : {};
   return Object.freeze({
     credentialScrubEnv: Object.freeze(scrub),
     excludedStoreNames: Object.freeze(
       selected ? [`gitlab-oauth-${selected.identity.profileId.slice(4)}`] : [],
     ),
-    localIdentityEnv: Object.freeze(
-      selected
-        ? {
-            GLAB_CONFIG_DIR: resolveManagedGitLabProfileDir({
-              ...params,
-              scope: selected.scope,
-              profileId: selected.identity.profileId,
-            }),
-            GITLAB_HOST: new URL(selected.identity.issuer).host,
-          }
-        : {},
-    ),
+    localIdentityEnv: Object.freeze(localIdentityEnv),
     managedLocalIdentity: Boolean(selected),
     ...(selected ? { hostExecutionRequired: true as const } : {}),
   });

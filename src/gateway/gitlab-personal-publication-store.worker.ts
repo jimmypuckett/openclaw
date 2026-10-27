@@ -1,5 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { sql } from "kysely";
+import { jsonPathValue, jsonValid } from "../infra/database-engine/json-values.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
@@ -26,7 +27,13 @@ import {
 
 const table = "gitlab_personal_publication_requests";
 const query = (db: EngineConnection) => getNodeSqliteKysely<Pick<DB, typeof table>>(db);
-const sharedPublisher = sql<boolean>`CASE WHEN json_valid(receipt_json) THEN json_extract(receipt_json, '$.publisher.source') IN ('system-configured', 'agent-override') ELSE 0 END`;
+export const gitLabSharedPublisherPredicate = (db: EngineConnection) => {
+  const receipt =
+    /* kysely-allow-raw: Fixed native receipt column, never a caller-selected identifier. */ sql.ref(
+      "receipt_json",
+    );
+  return /* kysely-allow-raw: Engine-neutral CASE guards the engine-owned JSON projection; all values are bound. */ sql<boolean>`CASE WHEN ${jsonValid(db, receipt)} THEN ${jsonPathValue(db, receipt, sql.val("$.publisher.source"))} IN (${"system-configured"}, ${"agent-override"}) ELSE FALSE END`;
+};
 
 function checked(row: PersonalGitLabPublicationRow): PersonalGitLabPublicationRow {
   if (row.request_digest !== personalGitLabRequestDigest(row)) {
@@ -211,7 +218,7 @@ export function readSharedGitLabPublicationInDatabase(
       input.lifecycleRevision === null ? "is" : "=",
       input.lifecycleRevision,
     )
-    .where(sharedPublisher);
+    .where(gitLabSharedPublisherPredicate(db));
   if ("requestId" in input.selector) {
     selection = selection.where("request_id", "=", input.selector.requestId);
   } else if ("idempotencyKey" in input.selector) {

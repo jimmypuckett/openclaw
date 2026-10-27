@@ -10,7 +10,10 @@ const custody = vi.hoisted(() => ({
   read: vi.fn<() => Promise<SecureFileReadResult>>(),
 }));
 vi.mock("@openclaw/fs-safe/permissions", () => ({ inspectPathPermissions: custody.inspect }));
-vi.mock("../infra/fs-safe.js", () => ({ readSecureFile: custody.read }));
+vi.mock("../infra/fs-safe.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../infra/fs-safe.js")>()),
+  readSecureFile: custody.read,
+}));
 
 import { readGitLabExecToken } from "./gitlab-exec-credential.js";
 

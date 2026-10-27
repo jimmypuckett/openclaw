@@ -42,7 +42,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function connectionClient(request: ReturnType<typeof vi.fn>) {
+function connectionClient(request: (method: string, params: unknown) => Promise<unknown>) {
   return {
     request: (method: string, params: unknown) =>
       method.startsWith("tools.gitlab.")
@@ -59,7 +59,7 @@ function connectionContext(gateway: ApplicationContext["gateway"]): ApplicationC
   } as unknown as ApplicationContext;
 }
 
-function mount(request: ReturnType<typeof vi.fn>) {
+function mount(request: (method: string, params: unknown) => Promise<unknown>) {
   const client = connectionClient(request);
   const initial = {
     client,
@@ -231,7 +231,7 @@ it("shows a recoverable error when the returned request is unavailable for the c
     "",
     "https://app.example.test",
   );
-  const request = vi.fn(async () => disconnected);
+  const request = vi.fn(async (_method: string) => disconnected);
   const ui = mount(request);
   await waitForSolid(() => expect(ui.container.textContent).toContain("expired or changed"));
   expect(request.mock.calls.every(([method]) => method === "users.gitlab.status")).toBe(true);

@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
   captureAgentLifecycleBinding,
@@ -29,6 +28,7 @@ import {
 } from "../agents/gitlab-tool-identity.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { parseGitLabOAuthCallback } from "../shared/gitlab-oauth-callback.js";
+import { fingerprintGitLabOAuthConfig } from "./gitlab-oauth-config-fingerprint.js";
 import { updateGitLabToolIdentityConfig } from "./gitlab-tool-identity-config.js";
 import type { PersonalForgeAction } from "./server-methods/personal-forge-authorization.js";
 
@@ -40,8 +40,6 @@ type Active = Target & {
 };
 const targetKey = (target: Target) =>
   target.scope === "system" ? "system" : `agent:${target.agentId}`;
-const fingerprint = (config: ReturnType<typeof validateGitLabOAuthConfig>) =>
-  createHash("sha256").update(JSON.stringify(config)).digest("hex");
 
 /** Native managed setup has its own target and administrator, separate from user grants. */
 export function createManagedGitLabOAuthLifecycle(params: {
@@ -167,7 +165,7 @@ export function createManagedGitLabOAuthLifecycle(params: {
     if (
       record.initiatorProfileId !== action.owner ||
       record.expiresAtMs <= Date.now() ||
-      record.configFingerprint !== fingerprint(configuration()) ||
+      record.configFingerprint !== fingerprintGitLabOAuthConfig(configuration()) ||
       record.issuer !== configuration().issuer
     ) {
       throw new Error("GitLab authorization changed or expired; start again.");
@@ -258,7 +256,7 @@ export function createManagedGitLabOAuthLifecycle(params: {
           ...target,
           initiatorProfileId: action.owner,
           issuer: oauthConfig.issuer,
-          configFingerprint: fingerprint(oauthConfig),
+          configFingerprint: fingerprintGitLabOAuthConfig(oauthConfig),
           expectedIdentity,
           ...(binding ? { agentLifecycleBinding: binding } : {}),
           state,

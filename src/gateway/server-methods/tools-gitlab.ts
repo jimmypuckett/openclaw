@@ -25,7 +25,9 @@ async function managed<T>(
   try {
     const action = await preparePersonalForgeAction(options, scope, undefined, "GitLab");
     const service = options.context.gitlabManagedOAuthService;
-    if (!service) {throw new Error("GitLab connection management is unavailable.");}
+    if (!service) {
+      throw new Error("GitLab connection management is unavailable.");
+    }
     const result = await run(action, service);
     action.assertCurrent();
     options.respond(true, result);
@@ -55,7 +57,9 @@ export const toolsGitLabHandlers: GatewayRequestHandlers = {
         cfg: options.context.getRuntimeConfig(),
         respond: options.respond,
       });
-      if (!target) {return;}
+      if (!target) {
+        return;
+      }
       await managed(options, "operator.read", async (action, service) => {
         const status = await service.status(
           { scope: options.params.selectedScope ?? "agent", agentId: target.agentId },
@@ -88,7 +92,9 @@ export const toolsGitLabHandlers: GatewayRequestHandlers = {
         cfg: options.context.getRuntimeConfig(),
         respond: options.respond,
       });
-      if (!target) {return;}
+      if (!target) {
+        return;
+      }
       await managed(options, "operator.admin", (action, service) =>
         service.start(action, { scope: options.params.scope, agentId: target.agentId }),
       );
@@ -119,13 +125,17 @@ export const toolsGitLabHandlers: GatewayRequestHandlers = {
         cfg: options.context.getRuntimeConfig(),
         respond: options.respond,
       });
-      if (!target) {return;}
+      if (!target) {
+        return;
+      }
       await managed(options, "operator.admin", async (action, service) => {
         const binding =
           options.params.scope === "agent"
             ? await captureAgentLifecycleBinding(options.context.getRuntimeConfig, target.agentId)
             : undefined;
-        if (options.params.scope === "agent" && !binding) {throw new Error("Agent is unavailable.");}
+        if (options.params.scope === "agent" && !binding) {
+          throw new Error("Agent is unavailable.");
+        }
         await retireManagedGitLabProfile({
           config: options.context.getRuntimeConfig(),
           getCurrentConfig: options.context.getRuntimeConfig,

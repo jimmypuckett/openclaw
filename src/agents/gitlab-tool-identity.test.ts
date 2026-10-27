@@ -11,14 +11,16 @@ const state = vi.hoisted(() => ({
   record: undefined as unknown,
   effects: [] as string[],
 }));
-vi.mock("./gitlab-managed-records.js", () => ({
+vi.mock("./gitlab-managed-records.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./gitlab-managed-records.js")>()),
   inspectGitLabManagedOAuthRecord: async () => ({ state: "valid", record: state.record }),
   writeGitLabManagedOAuthRecord: async (next: unknown) => {
     state.effects.push("record");
     state.record = next;
   },
 }));
-vi.mock("./gitlab-oauth-client.js", () => ({
+vi.mock("./gitlab-oauth-client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./gitlab-oauth-client.js")>()),
   refreshGitLabAuthorization: async () => {
     state.effects.push("provider");
     return {
@@ -36,12 +38,14 @@ vi.mock("./gitlab-oauth-client.js", () => ({
     issuer: "https://gitlab.example",
   }),
 }));
-vi.mock("./gitlab-tool-profile-files.js", () => ({
+vi.mock("./gitlab-tool-profile-files.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./gitlab-tool-profile-files.js")>()),
   writeManagedGitLabProfileFiles: async () => {
     state.effects.push("profile");
   },
   readManagedGitLabProfileToken: async () => "next-access",
 }));
+// mock-isolation: This credential unit fixture must not admit a real state database or worker.
 vi.mock("../state/openclaw-state-worker-context.js", () => ({
   captureOpenClawStateReadContext: () => ({
     admission: { databasePath: "/tmp/managed-gitlab-test.db", assertCurrent: () => undefined },

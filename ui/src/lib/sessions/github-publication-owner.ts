@@ -99,7 +99,9 @@ export class GitHubPublicationOwner {
   private readonly presentations = new Set<Presentation>();
   private version = 0;
   private activity: GitHubPublicationActivity | null = null;
-  private options: GitHubPublicationOptions | null = null;
+  private options:
+    | (GitHubPublicationOptions & { target?: RepositoryPublicationTarget | null })
+    | null = null;
   private selection: GitHubPublicationSelection | null = null;
   private attempt: {
     idempotencyKey: string;
@@ -587,11 +589,7 @@ export class GitHubPublicationOwner {
     };
     return {
       provider: this.provider,
-      target: (
-        this.options as
-          | (GitHubPublicationOptions & { target?: RepositoryPublicationTarget | null })
-          | null
-      )?.target,
+      target: this.options?.target,
       readiness: {
         read: this.readCompletion?.promise ?? null,
         retired: presentation.lifetime.promise,

@@ -422,7 +422,9 @@ export async function runPersonalGitLabPublication(
             workspaceTree: saved.workspaceHead,
             previousHeadCommit: saved.previousHeadCommit,
             headCommit: row.head_commit,
+            // SAFETY: The native publication table CHECK constrains last_effect to these values or NULL.
             lastEffect: row.last_effect as "push" | "pull_request" | null,
+            // SAFETY: The native publication table CHECK constrains effect_state to these values or NULL.
             effectState: row.effect_state as "dispatched" | "observed" | null,
           },
           ownsExecution: () => native!.ownsExecution(),

@@ -6,12 +6,20 @@ const mocks = vi.hoisted(() => ({
   lease: vi.fn(),
   bindLifetime: vi.fn(),
 }));
-vi.mock("./github-publication-availability.js", () => ({
+vi.mock("./github-publication-availability.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./github-publication-availability.js")>()),
   readGitHubPublicationWorktreeOwner: mocks.readOwner,
 }));
-vi.mock("../agents/worktrees/run-lease.js", () => ({ acquireWorktreeRunLease: mocks.lease }));
-vi.mock("../config/sessions/lifecycle.js", () => ({ resolveSessionWorkStartError: () => null }));
-vi.mock("./github-publication-source.js", () => ({
+vi.mock("../agents/worktrees/run-lease.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/worktrees/run-lease.js")>()),
+  acquireWorktreeRunLease: mocks.lease,
+}));
+vi.mock("../config/sessions/lifecycle.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../config/sessions/lifecycle.js")>()),
+  resolveSessionWorkStartError: () => null,
+}));
+vi.mock("./github-publication-source.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./github-publication-source.js")>()),
   bindGitHubPublicationSourceLifetime: mocks.bindLifetime,
 }));
 

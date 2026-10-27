@@ -437,9 +437,7 @@ async function resolveSandboxContextWithAuthority(
                       ...githubIdentity?.credentialScrubEnv,
                       ...githubIdentity?.localIdentityEnv,
                       ...gitlabIdentity?.credentialScrubEnv,
-                      ...(gitlabIdentity?.localIdentityEnv as
-                        | Readonly<Record<string, string>>
-                        | undefined),
+                      ...gitlabIdentity?.localIdentityEnv,
                       ...(githubIdentity ? { GH_CONFIG_DIR: SANDBOX_GITHUB_CONFIG_DIR } : {}),
                       ...(gitlabProfileDir ? { GLAB_CONFIG_DIR: SANDBOX_GITLAB_CONFIG_DIR } : {}),
                     },

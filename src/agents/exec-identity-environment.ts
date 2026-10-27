@@ -46,8 +46,8 @@ export function prepareExecIdentityEnvironment(params: {
     }),
     localIdentityEnv: Object.freeze({
       ...github.localIdentityEnv,
-      ...(gitlab.localIdentityEnv as Readonly<Record<string, string>>),
-    } as Record<string, string>),
+      ...gitlab.localIdentityEnv,
+    }),
     excludedStoreNames: Object.freeze([...github.excludedStoreNames, ...gitlab.excludedStoreNames]),
     managedGitLabIdentity: gitlab.managedLocalIdentity,
     ...(github.hostExecutionRequired || gitlab.hostExecutionRequired

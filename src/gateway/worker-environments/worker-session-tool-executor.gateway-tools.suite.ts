@@ -4,6 +4,7 @@ import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers
 import { finalizeAgentTools } from "../../agents/agent-tools.finalize.js";
 import type { AnyAgentTool } from "../../agents/tools/common.js";
 import { getGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
+import { healthSummary } from "../../commands/health.test-fixtures.js";
 import { initializeGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { createMockPluginRegistry } from "../../plugins/hooks.test-helpers.js";
 import {
@@ -18,12 +19,14 @@ import {
 } from "./worker-session-tool-executor.test-support.js";
 
 function gatewayProbeContext(): GatewayRequestContext {
-  return {
+  const context: Partial<GatewayRequestContext> = {
     getRuntimeConfig: () => ({}),
-    trackExecution: (run: () => Promise<unknown>) => run(),
-    getHealthCache: () => undefined,
-    refreshHealthSnapshot: async () => ({ ok: true, ts: Date.now() }),
-  } as unknown as GatewayRequestContext;
+    trackExecution: async <T>(run: () => T | Promise<T>): Promise<T> => run(),
+    getHealthCache: () => null,
+    refreshHealthSnapshot: async () => healthSummary(),
+  };
+  // SAFETY: This isolated probe invokes only these four methods, never other Gateway context members.
+  return context as GatewayRequestContext;
 }
 
 export function registerWorkerGatewayToolExecutionTests(

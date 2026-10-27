@@ -31,7 +31,8 @@ const state = vi.hoisted(() => ({
   pushes: 0,
   failFirstPush: false,
 }));
-vi.mock("./github-publication-availability.js", () => ({
+vi.mock("./github-publication-availability.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./github-publication-availability.js")>()),
   readGitHubPublicationWorktreeOwner: async () => ({
     worktree: state.worktree,
     assertCurrent: () => ({ loaded: { entry: state.entry } }),
@@ -39,7 +40,8 @@ vi.mock("./github-publication-availability.js", () => ({
     [Symbol.dispose]() {},
   }),
 }));
-vi.mock("../agents/worktrees/run-lease.js", () => ({
+vi.mock("../agents/worktrees/run-lease.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/worktrees/run-lease.js")>()),
   acquireWorktreeRunLease: async () => ({ release: async () => {} }),
 }));
 vi.mock("./gitlab-publication-git.js", async (original) => ({

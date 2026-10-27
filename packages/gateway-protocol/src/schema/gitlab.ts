@@ -35,7 +35,7 @@ export const UsersGitLabAuthorizeCompleteParamsSchema = closedObject({
 });
 export const UsersGitLabDisconnectParamsSchema = closedObject({});
 const id = Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER });
-export const GitLabPublicationGenerationSchema = Type.String({ format: "uuid", maxLength: 36 });
+const GitLabPublicationGenerationSchema = Type.String({ format: "uuid", maxLength: 36 });
 export const GitLabPublicationAccountSchema = closedObject({
   accountId: id,
   login: Type.String({ minLength: 1, maxLength: 255 }),

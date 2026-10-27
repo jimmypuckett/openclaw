@@ -270,8 +270,10 @@ export function parseIssue(value: unknown, project: Project): Issue {
     state: value.state,
     updatedAt: string(value.updated_at, "issue", 64),
     authorId: positiveId(value.author.id, "issue author"),
+    // SAFETY: The response guard above rejects every non-string label.
     labels: value.labels as string[],
     assigneeIds: value.assignees.map((assignee) =>
+      // SAFETY: The response guard above proves each assignee is a record with an integer id.
       positiveId((assignee as Record<string, unknown>).id, "assignee"),
     ),
     milestoneId:

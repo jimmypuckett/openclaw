@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hidden = vi.hoisted(() => new Map<string, string>());
-vi.mock("../secrets/store/secret-store-hidden-managed-gitlab.js", () => ({
+vi.mock("../secrets/store/secret-store-hidden-managed-gitlab.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../secrets/store/secret-store-hidden-managed-gitlab.js")
+  >()),
   writeHiddenGitLabSecretRecord: async ({
     name,
     value,

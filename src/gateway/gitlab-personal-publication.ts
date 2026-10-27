@@ -276,13 +276,14 @@ export async function readPersonalGitLabPublicationOptions(
             pending: null,
           }
         : null,
-      shared: sharedCredential
-        ? {
-            source: sharedCredential.publisher.source as "system-configured" | "agent-override",
-            accountId: sharedCredential.account.accountId,
-            login: sharedCredential.account.login,
-          }
-        : null,
+      shared:
+        sharedCredential && sharedCredential.publisher.source !== "personal"
+          ? {
+              source: sharedCredential.publisher.source,
+              accountId: sharedCredential.account.accountId,
+              login: sharedCredential.account.login,
+            }
+          : null,
       sharedUnavailableReason: sharedCredential
         ? undefined
         : configuredShared

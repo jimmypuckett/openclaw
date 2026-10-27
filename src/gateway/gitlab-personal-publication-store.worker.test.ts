@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { expect, it } from "vitest";
+import { DatabaseSync } from "node:sqlite";
+import { expect, it, vi } from "vitest";
 import {
   createGitLabManagedOAuthRecord,
   writeGitLabManagedOAuthRecord,
 } from "../agents/gitlab-managed-records.js";
 import { insertRegistryWorktree, updateRegistryWorktree } from "../agents/worktrees/registry.js";
+import { getNodeSqliteKysely } from "../infra/kysely-sync.js";
+import type { PostgresSqlConnection } from "../infra/sql-connection.js";
 import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
@@ -22,6 +25,7 @@ import {
   type PersonalGitLabPublicationRow,
 } from "./gitlab-personal-publication-store.js";
 import {
+  gitLabSharedPublisherPredicate,
   claimPersonalGitLabPublicationInDatabase,
   insertPersonalGitLabPublicationInDatabase,
   readPersonalGitLabPublicationInDatabase,
@@ -456,4 +460,34 @@ it("blocks cross-requester and cross-source writes to one unresolved workspace w
       })?.request_id,
     ).toBe(first.request_id);
   });
+});
+
+it("compiles the shared publisher predicate with guarded PostgreSQL JSON parsing and bound values", () => {
+  // Compile-only facade: this fixture cannot execute a database request.
+  using anchor = new DatabaseSync(":memory:");
+  const unavailable = vi.fn((): never => {
+    throw new Error("compile-only PostgreSQL fixture");
+  });
+  const db: PostgresSqlConnection = {
+    anchor,
+    mutationRevision: 0,
+    advisoryLockKey: 0n,
+    isOpen: true,
+    isTransaction: false,
+    prepare: unavailable,
+    exec: unavailable,
+    close: unavailable,
+    query: unavailable,
+    runTransaction: unavailable,
+  };
+  Object.defineProperty(db, Symbol.for("openclaw.postgres-sync-connection"), { value: true });
+  const query = getNodeSqliteKysely<{ receipts: { receipt_json: string } }>(db)
+    .selectFrom("receipts")
+    .select("receipt_json")
+    .where(gitLabSharedPublisherPredicate(db))
+    .compile();
+  expect(query.sql).toContain("CASE WHEN pg_input_is_valid");
+  expect(query.sql).toContain("::jsonb #>>");
+  expect(query.sql).not.toMatch(/json_valid|json_extract/);
+  expect(query.parameters).toEqual(["$.publisher.source", "system-configured", "agent-override"]);
 });

@@ -247,3 +247,45 @@ it("links two humans through registered RPC, rejects cross-person/replayed callb
     }
   });
 });
+
+it("rejects a personal callback after public application metadata changes before token exchange", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    const config: OpenClawConfig = {
+      agents: { entries: { main: { workspace: state.workspaceDir } } },
+      gateway: {
+        gitlab: {
+          issuer: "https://gitlab.example.test",
+          clientId: "public-client",
+          redirectUri: "https://gateway.example.test/oauth/gitlab/callback",
+        },
+      },
+    };
+    setRuntimeConfigSnapshot(config);
+    const owner = ensureProfileForEmail("alice@example.test");
+    await prepareUserProfileCatalog();
+    const service = createPersonalGitLabOAuthLifecycle(() => config);
+    const fetcher = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetcher);
+    const action = {
+      owner: owner.id,
+      signal: new AbortController().signal,
+      assertCurrent: () => {},
+    };
+    try {
+      const started = await service.start(action);
+      const callback = new URL(config.gateway!.gitlab!.redirectUri);
+      callback.searchParams.set("code", "synthetic-code");
+      callback.searchParams.set(
+        "state",
+        new URL(started.authorizationUrl).searchParams.get("state")!,
+      );
+      config.gateway!.gitlab!.clientId = "replacement-public-client";
+      await expect(
+        service.complete(action, started.requestId, callback.toString()),
+      ).rejects.toThrow("GitLab authorization changed");
+      expect(fetcher).not.toHaveBeenCalled();
+    } finally {
+      await service.stop();
+    }
+  });
+});

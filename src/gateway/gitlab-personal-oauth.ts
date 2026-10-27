@@ -1,12 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
-import { validateGitLabOAuthConfig, type GitLabOAuthConfig } from "../agents/gitlab-host.js";
+import { randomUUID } from "node:crypto";
+import { validateGitLabOAuthConfig } from "../agents/gitlab-host.js";
 import {
   createGitLabAuthorization,
   exchangeGitLabAuthorization,
   refreshGitLabAuthorization,
   verifyGitLabAccount,
   type GitLabAccount,
-  type GitLabOAuthTokens,
 } from "../agents/gitlab-oauth-client.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { parseGitLabOAuthCallback } from "../shared/gitlab-oauth-callback.js";
@@ -20,6 +19,7 @@ import {
   disconnectUserGitLabConnection,
   type UserGitLabConnection,
 } from "../state/user-gitlab-connections.js";
+import { fingerprintGitLabOAuthConfig } from "./gitlab-oauth-config-fingerprint.js";
 import type { PersonalForgeAction } from "./server-methods/personal-forge-authorization.js";
 
 export type PersonalGitLabCredential = {
@@ -28,10 +28,6 @@ export type PersonalGitLabCredential = {
   assertCurrent: () => void;
   withToken: <T>(run: (token: string) => Promise<T>) => Promise<T>;
 };
-
-function fingerprint(config: GitLabOAuthConfig): string {
-  return createHash("sha256").update(JSON.stringify(config)).digest("hex");
-}
 
 /** One Gateway lifetime owns personal linking and rotation for all GitLab operations. */
 export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConfig) {
@@ -49,14 +45,14 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
     action.assertCurrent();
     lifetime.signal.throwIfAborted();
     const config = configuration();
-    const captured = fingerprint(config);
+    const captured = fingerprintGitLabOAuthConfig(config);
     return {
       config,
       signal: AbortSignal.any([action.signal, lifetime.signal]),
       assertCurrent() {
         action.assertCurrent();
         lifetime.signal.throwIfAborted();
-        if (fingerprint(configuration()) !== captured) {
+        if (fingerprintGitLabOAuthConfig(configuration()) !== captured) {
           throw new Error("GitLab configuration changed; reconnect.");
         }
       },
@@ -109,7 +105,7 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
             verifier: authorization.verifier,
             createdAtMs,
             expiresAtMs: createdAtMs + 10 * 60_000,
-            configFingerprint: fingerprint(bound.config),
+            configFingerprint: fingerprintGitLabOAuthConfig(bound.config),
           },
         };
         await replaceUserGitLabConnection(
@@ -132,7 +128,10 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
         const { code, state } = parseGitLabOAuthCallback(bound.config.redirectUri, callbackUrl);
         const current = await readUserGitLabConnectionAsync(action.owner, bound.config.issuer);
         bound.assertCurrent();
-        if (!current?.pending || current.pending.configFingerprint !== fingerprint(bound.config)) {
+        if (
+          !current?.pending ||
+          current.pending.configFingerprint !== fingerprintGitLabOAuthConfig(bound.config)
+        ) {
           throw new Error("GitLab authorization changed; start again.");
         }
         // The native worker consumes the exact owner-bound state before any token request.
@@ -274,11 +273,10 @@ export function createPersonalGitLabOAuthLifecycle(getConfig: () => OpenClawConf
             throw new Error("Personal GitLab authorization changed or expired.");
           }
         };
-        const account = await verifyGitLabAccount(
-          bound.config,
-          selected.tokens as GitLabOAuthTokens,
-          { signal: bound.signal, assertCurrent },
-        );
+        const account = await verifyGitLabAccount(bound.config, selected.tokens, {
+          signal: bound.signal,
+          assertCurrent,
+        });
         assertCurrent();
         if (
           account.accountId !== selected.account.accountId ||
