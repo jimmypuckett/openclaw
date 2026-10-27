@@ -208,7 +208,7 @@ export async function readPersonalGitLabPublicationOptions(
   const sharedRow = await readSharedGitLabPublicationForAction(
     action,
     issuer,
-    idempotencyKey ? { idempotencyKey } : { pending: true },
+    idempotencyKey ? { idempotencyKey } : { latest: true },
     { allowUnavailableWorkspace: true },
   );
   const configuredShared = resolveEffectiveGitLabToolIdentity({

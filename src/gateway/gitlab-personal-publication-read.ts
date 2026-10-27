@@ -17,7 +17,8 @@ type Action = {
 export type GitLabPublicationSelector =
   | { requestId: string }
   | { idempotencyKey: string }
-  | { pending: true };
+  | { pending: true }
+  | { latest: true };
 
 /** A shared receipt belongs to the admitted session, while its original owner remains immutable. */
 export async function readSharedGitLabPublicationForAction(

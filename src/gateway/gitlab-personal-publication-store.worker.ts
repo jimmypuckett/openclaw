@@ -188,7 +188,11 @@ export function readSharedGitLabPublicationInDatabase(
     sessionKey: string;
     agentId: string;
     lifecycleRevision: string | null;
-    selector: { requestId: string } | { idempotencyKey: string } | { pending: true };
+    selector:
+      | { requestId: string }
+      | { idempotencyKey: string }
+      | { pending: true }
+      | { latest: true };
     workspace?: { id: string; repoFingerprint: string; branch: string };
   },
 ): PersonalGitLabPublicationRow | undefined {
@@ -212,7 +216,7 @@ export function readSharedGitLabPublicationInDatabase(
     selection = selection.where("request_id", "=", input.selector.requestId);
   } else if ("idempotencyKey" in input.selector) {
     selection = selection.where("idempotency_key", "=", input.selector.idempotencyKey);
-  } else {
+  } else if ("pending" in input.selector) {
     selection = selection.where("status", "in", ["requested", "publishing", "needs_confirmation"]);
   }
   const rows = executeSqliteQuerySync(
@@ -221,7 +225,10 @@ export function readSharedGitLabPublicationInDatabase(
   ).rows;
   for (const row of rows) {
     checked(row);
-    if (!("pending" in input.selector) && (row.status === "published" || row.status === "failed")) {
+    if (
+      ("requestId" in input.selector || "idempotencyKey" in input.selector) &&
+      (row.status === "published" || row.status === "failed")
+    ) {
       return row;
     }
     const workspace = input.workspace;

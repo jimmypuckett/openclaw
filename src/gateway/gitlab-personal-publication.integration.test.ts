@@ -9,7 +9,7 @@ import {
   writeGitLabManagedOAuthRecord,
   type GitLabManagedOAuthRecord,
 } from "../agents/gitlab-managed-records.js";
-import { insertRegistryWorktree } from "../agents/worktrees/registry.js";
+import { insertRegistryWorktree, updateRegistryWorktree } from "../agents/worktrees/registry.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -173,7 +173,7 @@ it.each([
               commitEmail: "managed-bot@example.test",
             }
           : account;
-      let generation = randomUUID();
+      let generation: string = randomUUID();
       let publisher: GitLabPublicationPublisher = { source: "personal" };
       let managedRecord: GitLabManagedOAuthRecord | undefined;
       if (fault === "shared-native" || fault === "shared-agent-native") {
@@ -532,11 +532,63 @@ it.each([
             })
           )?.owner_profile_id,
         ).toBe(owner);
+        const publishedOptions = await readPersonalGitLabPublicationOptions(
+          options as never,
+          collaborator as never,
+        );
+        expect(publishedOptions.pendingPersonal).toBeNull();
+        expect(publishedOptions.latestShared?.result).toMatchObject({
+          status: "published",
+          requestId: acceptedRequestId,
+          url: `${project.web_url}/-/merge_requests/9`,
+          headCommit: finalHead,
+          publisher: {
+            source: publisher.source,
+            accountId: publicationAccount.accountId,
+            login: publicationAccount.login,
+          },
+        });
+        const originalWorktree = state.worktree!;
+        for (const changedWorktree of [
+          { ...originalWorktree, id: randomUUID() },
+          { ...originalWorktree, repoFingerprint: `replacement-${randomUUID()}` },
+          { ...originalWorktree, branch: "another-branch" },
+        ]) {
+          state.worktree = changedWorktree;
+          expect(
+            (await readPersonalGitLabPublicationOptions(options as never, collaborator as never))
+              .latestShared,
+          ).toBeNull();
+        }
+        state.worktree = originalWorktree;
+        await updateRegistryWorktree(process.env, originalWorktree.id, {
+          removedAt: Date.now(),
+        });
+        expect(
+          (await readPersonalGitLabPublicationOptions(options as never, collaborator as never))
+            .latestShared,
+        ).toBeNull();
+        expect(
+          (
+            await readPersonalGitLabPublicationStatus(
+              options as never,
+              collaborator as never,
+              null,
+              acceptedRequestId,
+            )
+          ).result,
+        ).toMatchObject({ status: "published", requestId: acceptedRequestId });
         expect(posts).toBe(1);
         return;
       }
       if (fault === "lost-mr-response") {
         const otherOwner = ensureProfileForEmail("gitlab-private-collaborator@example.test").id;
+        const otherOptions = await readPersonalGitLabPublicationOptions(
+          options as never,
+          { ...action, owner: otherOwner } as never,
+        );
+        expect(otherOptions.pendingPersonal).toBeNull();
+        expect(otherOptions.latestShared).toBeNull();
         await expect(
           readPersonalGitLabPublicationStatus(
             options as never,

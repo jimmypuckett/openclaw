@@ -4,6 +4,7 @@ import {
   createGitLabManagedOAuthRecord,
   writeGitLabManagedOAuthRecord,
 } from "../agents/gitlab-managed-records.js";
+import { insertRegistryWorktree, updateRegistryWorktree } from "../agents/worktrees/registry.js";
 import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
@@ -392,5 +393,67 @@ it("blocks cross-requester and cross-source writes to one unresolved workspace w
         selector: { requestId: otherBranch.request_id },
       }),
     ).toBeUndefined();
+    await insertRegistryWorktree(process.env, {
+      id: first.worktree_id,
+      name: "topic",
+      path: "/tmp/repo",
+      repoRoot: "/tmp/repo",
+      repoFingerprint: first.repository_fingerprint,
+      branch: first.branch,
+      baseRef: "origin/master",
+      ownerKind: "session",
+      ownerId: first.session_key,
+      createdAt: now,
+      lastActiveAt: now,
+    });
+    const claimed = runOpenClawStateWriteTransaction((database) =>
+      claimPersonalGitLabPublicationInDatabase(database, first, "gateway", "execution", current),
+    );
+    runOpenClawStateWriteTransaction((database) =>
+      writePersonalGitLabPublicationInDatabase(database, claimed, "gateway", "execution", {
+        status: "published",
+        head_commit: "d".repeat(40),
+        pull_request_url: `${issuer}/org/repo/-/merge_requests/9`,
+        result_json: JSON.stringify({
+          status: "published",
+          requestId: first.request_id,
+          url: `${issuer}/org/repo/-/merge_requests/9`,
+          repository: "org/repo",
+          branch: first.branch,
+          headCommit: "d".repeat(40),
+        }),
+      }),
+    );
+    const readShared = (workspace: { id: string; repoFingerprint: string; branch: string }) =>
+      readSharedGitLabPublicationInDatabase(openOpenClawStateDatabase().db, {
+        issuer,
+        sessionId,
+        sessionKey: first.session_key,
+        agentId: "main",
+        lifecycleRevision: null,
+        selector: { latest: true },
+        workspace,
+      });
+    const workspace = {
+      id: first.worktree_id,
+      repoFingerprint: first.repository_fingerprint,
+      branch: first.branch,
+    };
+    expect(readShared(workspace)?.request_id).toBe(first.request_id);
+    expect(readShared({ ...workspace, id: randomUUID() })).toBeUndefined();
+    expect(readShared({ ...workspace, repoFingerprint: "another-fingerprint" })).toBeUndefined();
+    expect(readShared({ ...workspace, branch: "another-branch" })).toBeUndefined();
+    await updateRegistryWorktree(process.env, first.worktree_id, { removedAt: Date.now() });
+    expect(readShared(workspace)).toBeUndefined();
+    expect(
+      readSharedGitLabPublicationInDatabase(openOpenClawStateDatabase().db, {
+        issuer,
+        sessionId,
+        sessionKey: first.session_key,
+        agentId: "main",
+        lifecycleRevision: null,
+        selector: { requestId: first.request_id },
+      })?.request_id,
+    ).toBe(first.request_id);
   });
 });
