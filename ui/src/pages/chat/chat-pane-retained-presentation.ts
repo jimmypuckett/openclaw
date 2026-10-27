@@ -577,6 +577,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
       return;
     }
     if (presented) {
+      this.resumeTranscriptReads();
       this.consumeSessionHandoff(this.sessionKey);
       this.activateComposerPresentation();
       this.syncActiveBindings();
@@ -617,7 +618,7 @@ export abstract class ChatPaneRetainedPresentation extends ChatPaneBoard {
     }
     this.swarm.hydrator?.dispose();
     this.swarm.hydrator = null;
-    this.clearHistoryObserver();
+    this.retireTranscriptReads(true);
     sessionPullRequestsForGateway(this.context.gateway).unwatch(this);
     this.syncActiveBindings();
     this.clearComposerPrefillAttention();
