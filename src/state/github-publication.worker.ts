@@ -71,7 +71,6 @@ function mutate(
       assertMutationSource(database, receipt, source);
       assertGitHubPublicationWorkerSourceCurrent(database.db);
       deferSqliteWorkerCommitReceipt(sqlPublicationAnchor(database.db), receipt);
-      return receipt;
     });
   }
   return runOpenClawStateWriteTransaction(
@@ -79,7 +78,6 @@ function mutate(
       // Accepted bookkeeping can settle after caller revocation; it grants no GitHub action.
       const receipt = capture();
       deferSqliteWorkerCommitReceipt(sqlPublicationAnchor(db), receipt);
-      return receipt;
     },
     { database },
     { operationLabel: `github-publication.${input.operation}` },

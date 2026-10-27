@@ -100,7 +100,9 @@ Host Code Mode using the Node executor, QA expressions, and plugins fetched afte
 the build run interpreted. Each feature emits one performance notice per process;
 use a JIT build for full speed. Fetched CJS/TypeScript plugins load from disk
 through the normal loader against the compiled SDK in both emitted-JavaScript
-and original-TypeScript AOT builds. Missing runtime modules and
+and original-TypeScript AOT builds. The loader transfers compiled SDK exports to
+interpreted plugins; virtual SDK paths do not contain readable source files.
+Missing runtime modules and
 builds with `--disallow-code-generation-from-strings=strict` still report actionable
 guidance. Guest runtimes keep their own qualification requirements; OpenClaw
 does not silently switch executors.
@@ -166,6 +168,13 @@ AOT-only options apply to either input mode:
   `=strict` also denies VM string execution. The strict option breaks host NodeVM
   execution. These settings do not prohibit every guest interpreter.
 - `--explain[=<report>]` writes compiler diagnostics. It can be repeated.
+- `--aot-disable <name,...>` forwards Bun's supported compiler-step opt-outs and
+  can be repeated. For large graphs whose whole-program analysis exceeds the
+  build's memory budget, `--aot-disable=flow-results` skips that analysis and its
+  optimizations. Code still compiles ahead of time, with the same runtime behavior
+  and hardening options; the executable can be larger or slower. Bun validates
+  the names. Qualify the resulting artifact and record this option in build
+  comparisons.
 - `--aot-log-type-mismatches` inventories mismatches and changes generated code;
   rebuild without it for performance measurements.
 
@@ -461,8 +470,8 @@ The sealed single-file update-recovery helper uses its existing in-process hashi
 fallback so its recorded recovery artifact remains self-contained. Normal
 installations use the declared hashing workers.
 
-Browser MCP and remote repository bootstrap scripts are generated from typed
-sources into bundled script assets. Regenerate them with `pnpm runtime:scripts:gen`;
+Browser MCP, widget keyboard shortcuts, and remote repository bootstrap scripts are
+generated from typed sources into bundled script assets. Regenerate them with `pnpm runtime:scripts:gen`;
 `pnpm runtime:scripts:check` verifies freshness before building. The runtime does
 not need to serialize function bodies or retain loose JavaScript for these scripts.
 

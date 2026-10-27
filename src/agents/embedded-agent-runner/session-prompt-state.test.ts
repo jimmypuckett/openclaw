@@ -2,6 +2,7 @@ import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "@openclaw/ai/internal/shared";
 import { publishRuntimeToolInputSchema } from "@openclaw/ai/internal/tool-schema";
 import * as normalization from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { canonicalizeSessionEntry } from "../sessions/session-manager-persistence-entry.js";
 import type { SessionEntry } from "../sessions/session-manager-types.js";
 import type { AnyAgentTool } from "../tools/common.js";
 import {
@@ -192,6 +193,32 @@ describe("system prompt series", () => {
     expect(project(second, [], "other-route").systemPrompt).toBe(second);
   });
 
+  it.each(["compaction", "reset"] as const)(
+    "restarts on a new %s, but not when its payload enters or leaves a bounded window",
+    (kind) => {
+      const state = fixture.state;
+      const projectBoundary = (entries: SessionEntry[], historyBoundaryCount: number) => {
+        const result = prepareSessionSystemPrompt({
+          state,
+          routeKey,
+          entries,
+          historyBoundaryCount,
+          systemPrompt: entries.length ? changed : base,
+        });
+        result.commit();
+        return result;
+      };
+      const first = projectBoundary([], 1);
+      expect(projectBoundary([historyEntry(kind, "old")], 1).systemPrompt).toBe(first.systemPrompt);
+      const compacted = projectBoundary([historyEntry(kind, "new")], 2);
+      expect(compacted.restart).toBe(true);
+      expect(compacted.systemPrompt).toBe(changed);
+      expect(projectBoundary([], 2).systemPrompt).toBe(compacted.systemPrompt);
+      beginSessionSystemPrompt({ state, routeKey, enabled: true, getEntries: () => [] });
+      expect(projectBoundary([historyEntry(kind, "different-branch")], 2).restart).toBe(true);
+    },
+  );
+
   it("replaces duplicate-heading groups without ambiguous partial removals", () => {
     project("First.\n## File\nOne.\n## File\nTwo.");
     const next = project("Second.\n## File\nChanged.\n## File\nTwo.");
@@ -234,7 +261,7 @@ describe("system prompt series", () => {
     await persist(entries);
     const state = fixture.state;
     const first = project(changed, entries);
-    beginSessionSystemPrompt({ state, routeKey, enabled: true, entries });
+    beginSessionSystemPrompt({ state, routeKey, enabled: true, getEntries: () => entries });
     const retry = project(changed, entries);
     expect(retry.update?.content).toBe(first.update?.content);
     await expect(
@@ -269,7 +296,7 @@ describe("system prompt series", () => {
     ).rejects.toThrow("checkpoint acknowledgment rejected");
     expect(entries.at(-1)).toMatchObject({ data: { renderedPrefix: changed.trimEnd() } });
 
-    beginSessionSystemPrompt({ state, routeKey, enabled: true, entries });
+    beginSessionSystemPrompt({ state, routeKey, enabled: true, getEntries: () => entries });
     const restored = project(base, entries);
     expect(restored.restart).toBe(false);
     expect(restored.systemPrompt).toBe(base.trimEnd());
@@ -294,7 +321,7 @@ describe("system prompt series", () => {
         fixture.reload();
       }
       const state = fixture.state;
-      beginSessionSystemPrompt({ state, routeKey, enabled: true, entries });
+      beginSessionSystemPrompt({ state, routeKey, enabled: true, getEntries: () => entries });
       const recovered = project(base, entries);
       expect(recovered.restart).toBe(true);
       expect(recovered.update).toBeUndefined();
@@ -351,9 +378,14 @@ describe("system prompt series", () => {
     project(changed, entries);
     await persist(entries);
     const state = fixture.state;
-    expect(beginSessionSystemPrompt({ state, routeKey: "other", enabled: false, entries })).toBe(
-      true,
-    );
+    expect(
+      beginSessionSystemPrompt({
+        state,
+        routeKey: "other",
+        enabled: false,
+        getEntries: () => entries,
+      }),
+    ).toBe(true);
     expect(state.systemPrompt).toBeUndefined();
     expect(project(changed, entries).restart).toBe(true);
   });
@@ -417,6 +449,42 @@ describe("session tool surface", () => {
     fixture.prepare(prompt, entries).commit();
     await fixture.persist(entries);
   }
+
+  it("reuses admitted tool payloads when checkpointing a changed prompt", async () => {
+    const entries: SessionEntry[] = [];
+    surface([tool("read"), tool("exec")]);
+    const write = (customType: string, data: unknown) => {
+      const entry = {
+        ...entryMetadata,
+        type: "custom" as const,
+        id: `checkpoint-${entries.length}`,
+        customType,
+        data,
+      };
+      const expected = JSON.stringify(entry);
+      const canonical = canonicalizeSessionEntry(entry);
+      expect(JSON.stringify(canonical)).toBe(expected);
+      entries.push(canonical);
+    };
+    fixture.prepare("Base.", entries).commit();
+    await persistSessionSystemPrompt(fixture.state, write);
+    const pinned = fixture.state.toolSurface!.tools;
+    fixture.prepare("Base.\n## Skills\nRefreshed.", entries).commit();
+    const ownKeys = vi.spyOn(Reflect, "ownKeys");
+    const descriptors = vi.spyOn(Object, "getOwnPropertyDescriptor");
+    try {
+      await persistSessionSystemPrompt(fixture.state, write);
+      expect(ownKeys.mock.calls.filter(([value]) => value === pinned)).toHaveLength(0);
+      expect(descriptors.mock.calls.filter(([value]) => value === pinned)).toHaveLength(0);
+    } finally {
+      ownKeys.mockRestore();
+      descriptors.mockRestore();
+    }
+    expect(entries).toHaveLength(2);
+    expect(entries[1]).toMatchObject({
+      data: { tools: pinned, renderedPrefix: "Base.\n## Skills\nRefreshed." },
+    });
+  });
 
   it("keeps every pinned definition on a turn that builds fewer tools and refuses the missing ones", async () => {
     const entries: SessionEntry[] = [];
