@@ -7,7 +7,9 @@ import { applyVerifiedGitLabAuthor } from "./gitlab-exec-author.js";
 
 let workdir: string | undefined;
 afterEach(async () => {
-  if (workdir) await fs.rm(workdir, { recursive: true, force: true });
+  if (workdir) {
+    await fs.rm(workdir, { recursive: true, force: true });
+  }
   workdir = undefined;
 });
 

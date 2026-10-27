@@ -15,7 +15,9 @@ export function assertManagedGitLabExecHost(params: {
   host: "gateway" | "sandbox" | "node";
   sandboxProfileDir?: string;
 }): void {
-  if (!params.selected) return;
+  if (!params.selected) {
+    return;
+  }
   if (params.host === "node") {
     throw new Error("Managed GitLab Identity requires local execution.");
   }

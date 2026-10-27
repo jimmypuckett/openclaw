@@ -16,7 +16,9 @@ export function applyVerifiedGitLabAuthor(params: {
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "" },
     },
   );
-  if (read.status !== 0 || typeof read.stdout !== "string") return false;
+  if (read.status !== 0 || typeof read.stdout !== "string") {
+    return false;
+  }
   const remote = read.stdout.trim();
   let host: string | undefined;
   try {
@@ -24,7 +26,9 @@ export function applyVerifiedGitLabAuthor(params: {
   } catch {
     host = /^[^@\s]+@([^:\s]+):[^\s]+$/u.exec(remote)?.[1];
   }
-  if (host?.toLowerCase() !== new URL(params.issuer).host.toLowerCase()) return false;
+  if (host?.toLowerCase() !== new URL(params.issuer).host.toLowerCase()) {
+    return false;
+  }
   params.env.GIT_AUTHOR_NAME = params.author.name;
   params.env.GIT_COMMITTER_NAME = params.author.name;
   params.env.GIT_AUTHOR_EMAIL = params.author.commitEmail;

@@ -111,7 +111,9 @@ it("composes selected GitHub and GitLab child identities without a selected toke
   expect(captured).toHaveLength(1);
   expect(JSON.stringify(captured[0]?.env)).not.toContain("synthetic-selected");
   const spawned = captured[0];
-  if (!spawned || !("argv" in spawned)) throw new Error("Expected an argv child spawn");
+  if (!spawned || !("argv" in spawned)) {
+    throw new Error("Expected an argv child spawn");
+  }
   expect(JSON.stringify(spawned.argv)).not.toContain("synthetic-selected");
   expect(asyncChecks).toHaveBeenCalled();
   expect(syncChecks).toHaveBeenCalled();
