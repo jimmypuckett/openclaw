@@ -7,10 +7,10 @@ const enProfile = {
   profilePage: {
     gitConnections: {
       title: "Git connections",
-      description: "Connect a personal account for repository publishing.",
+      description: "Connect your accounts for Git repository workflows.",
       addProvider: "Add provider",
       addProviderLabel: "Add Git provider",
-      chooseProvider: "Choose the account you want to use for repository publishing.",
+      chooseProvider: "Choose a Git provider to connect your account.",
       github: "GitHub",
       gitlab: "GitLab",
       gitlabServer: "GitLab server",
@@ -19,7 +19,7 @@ const enProfile = {
         "Enter your GitLab server URL. One server is supported; its OAuth application must be configured by an administrator.",
       gitlabContinue: "Continue with GitLab",
       githubDescription: "Connect your personal GitHub account.",
-      gitlabDescription: "Connect your personal GitLab account.",
+      gitlabDescription: "Connect your GitLab account for publishing, issues, and comments.",
       connectGithub: "Connect GitHub",
       connectGitlab: "Connect GitLab",
       cancel: "Cancel",

@@ -153,7 +153,9 @@ it("shows the verified personal publisher and disconnects without a fallback", a
   );
   const ui = mount(request);
   await waitForSolid(() =>
-    expect(ui.container.textContent).toContain("GitLab publications use @alice"),
+    expect(ui.container.textContent).toContain(
+      "Your GitLab publications, issues, and comments use @alice",
+    ),
   );
   expect(ui.container.textContent).not.toContain("alice@example.test");
   expect(ui.container.textContent).toContain(issuer);
@@ -210,7 +212,9 @@ it("completes the returned callback in a fresh authenticated Profile mount", asy
   );
   const ui = mount(request);
   await waitForSolid(() =>
-    expect(ui.container.textContent).toContain("GitLab publications use @alice"),
+    expect(ui.container.textContent).toContain(
+      "Your GitLab publications, issues, and comments use @alice",
+    ),
   );
   expect(request).toHaveBeenCalledWith("users.gitlab.authorize.complete", {
     requestId,
@@ -265,7 +269,9 @@ it("drops late status and authorization after the profile changes", async () => 
   });
   lateStatus.resolve(connected);
   await waitForSolid(() =>
-    expect(ui.container.textContent).toContain("GitLab publications use @alice"),
+    expect(ui.container.textContent).toContain(
+      "Your GitLab publications, issues, and comments use @alice",
+    ),
   );
   expect(ui.container.querySelector("a[href*='/oauth/authorize']")).toBeNull();
   ui.unmount();

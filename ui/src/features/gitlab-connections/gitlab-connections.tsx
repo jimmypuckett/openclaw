@@ -18,7 +18,7 @@ import { GitLabServerAuthorization } from "./gitlab-server-authorization.tsx";
 
 registerEnglishCatalog(registerProfileEnglish);
 
-/** User-bound GitLab identity for repository publishing. */
+/** User-bound GitLab identity for publication, issues, and comments. */
 export function GitLabConnections(
   props: {
     onConnectReady?: (connect: (() => void) | null) => void;
@@ -83,7 +83,7 @@ export function GitLabConnections(
       <div data-gitlab-connections="personal">
         <SettingsSection
           title="GitLab connections"
-          description="Check your connected GitLab account for repository publishing."
+          description="Check your connected GitLab account for publishing, issues, and comments."
           actions={
             <Show when={view().status?.configured}>
               <button
@@ -138,11 +138,11 @@ export function GitLabConnections(
               title="My GitLab"
               description={
                 view().status?.connected && view().status?.account
-                  ? `GitLab publications use @${view().status!.account!.login}.`
+                  ? `Your GitLab publications, issues, and comments use @${view().status!.account!.login}.`
                   : view().status?.verificationUnavailable
                     ? "Could not verify your GitLab account. Try Verify again."
                     : view().status?.reconnectRequired
-                      ? "Reconnect your GitLab account before publishing."
+                      ? "Reconnect your GitLab account to publish or work with issues and comments."
                       : "No GitLab account connected."
               }
               control={
