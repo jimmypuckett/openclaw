@@ -1,4 +1,5 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { sql } from "kysely";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
@@ -25,6 +26,7 @@ import {
 
 const table = "gitlab_personal_publication_requests";
 const query = (db: EngineConnection) => getNodeSqliteKysely<Pick<DB, typeof table>>(db);
+const sharedPublisher = sql<boolean>`CASE WHEN json_valid(receipt_json) THEN json_extract(receipt_json, '$.publisher.source') IN ('system-configured', 'agent-override') ELSE 0 END`;
 
 function checked(row: PersonalGitLabPublicationRow): PersonalGitLabPublicationRow {
   if (row.request_digest !== personalGitLabRequestDigest(row)) {
@@ -178,6 +180,82 @@ export function readPersonalGitLabPublicationInDatabase(
   return row ? checked(row) : undefined;
 }
 
+export function readSharedGitLabPublicationInDatabase(
+  db: EngineConnection,
+  input: {
+    issuer: string;
+    sessionId: string;
+    sessionKey: string;
+    agentId: string;
+    lifecycleRevision: string | null;
+    selector: { requestId: string } | { idempotencyKey: string } | { pending: true };
+    workspace?: { id: string; repoFingerprint: string; branch: string };
+  },
+): PersonalGitLabPublicationRow | undefined {
+  if (!tableExists(db, table)) {
+    return undefined;
+  }
+  let selection = query(db)
+    .selectFrom(table)
+    .selectAll()
+    .where("issuer", "=", input.issuer)
+    .where("session_id", "=", input.sessionId)
+    .where("session_key", "=", input.sessionKey)
+    .where("agent_id", "=", input.agentId)
+    .where(
+      "session_lifecycle_revision",
+      input.lifecycleRevision === null ? "is" : "=",
+      input.lifecycleRevision,
+    )
+    .where(sharedPublisher);
+  if ("requestId" in input.selector) {
+    selection = selection.where("request_id", "=", input.selector.requestId);
+  } else if ("idempotencyKey" in input.selector) {
+    selection = selection.where("idempotency_key", "=", input.selector.idempotencyKey);
+  } else {
+    selection = selection.where("status", "in", ["requested", "publishing", "needs_confirmation"]);
+  }
+  const rows = executeSqliteQuerySync(
+    db,
+    selection.orderBy("created_at_ms", "desc").orderBy("request_id", "desc"),
+  ).rows;
+  for (const row of rows) {
+    checked(row);
+    if (!("pending" in input.selector) && (row.status === "published" || row.status === "failed")) {
+      return row;
+    }
+    const workspace = input.workspace;
+    if (!workspace || !tableExists(db, "worktrees")) {
+      return undefined;
+    }
+    const current = executeSqliteQueryTakeFirstSync(
+      db,
+      getNodeSqliteKysely<Pick<DB, "worktrees">>(db)
+        .selectFrom("worktrees")
+        .select(["id", "owner_kind", "owner_id", "repo_fingerprint", "branch", "removed_at"])
+        .where("id", "=", workspace.id),
+    );
+    if (
+      !current ||
+      current.owner_kind !== "session" ||
+      current.owner_id !== input.sessionKey ||
+      current.removed_at !== null ||
+      current.repo_fingerprint !== workspace.repoFingerprint ||
+      current.branch !== workspace.branch
+    ) {
+      return undefined;
+    }
+    if (
+      row.worktree_id === workspace.id &&
+      row.repository_fingerprint === workspace.repoFingerprint &&
+      row.branch === workspace.branch
+    ) {
+      return row;
+    }
+  }
+  return undefined;
+}
+
 export function insertPersonalGitLabPublicationInDatabase(
   database: OpenClawStateDatabase,
   row: PersonalGitLabPublicationRow,
@@ -188,25 +266,30 @@ export function insertPersonalGitLabPublicationInDatabase(
   ensurePersonalGitLabPublicationSchema(db);
   checked(row);
   assertConnection(db, row);
-  const unresolved = executeSqliteQueryTakeFirstSync(
+  const unresolved = executeSqliteQuerySync(
     db,
     query(db)
       .selectFrom(table)
       .selectAll()
-      .where("owner_profile_id", "=", row.owner_profile_id)
       .where("issuer", "=", row.issuer)
       .where("session_id", "=", row.session_id)
+      .where("session_key", "=", row.session_key)
+      .where("agent_id", "=", row.agent_id)
       .where(
         "session_lifecycle_revision",
         row.session_lifecycle_revision === null ? "is" : "=",
         row.session_lifecycle_revision,
       )
-      .where("status", "in", ["requested", "publishing", "needs_confirmation"])
-      .orderBy("created_at_ms", "desc")
-      .limit(1),
-  );
-  if (unresolved && unresolved.idempotency_key !== row.idempotency_key) {
-    throw new Error("Personal GitLab publication has an unresolved request for this session.");
+      .where("worktree_id", "=", row.worktree_id)
+      .where("repository_fingerprint", "=", row.repository_fingerprint)
+      .where("branch", "=", row.branch)
+      .where("status", "in", ["requested", "publishing", "needs_confirmation"]),
+  ).rows;
+  for (const pending of unresolved) {
+    checked(pending);
+    if (pending.request_id !== row.request_id || pending.request_digest !== row.request_digest) {
+      throw new Error("GitLab publication workspace has an unresolved request.");
+    }
   }
   const inserted = executeSqliteQueryTakeFirstSync(
     db,

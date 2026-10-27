@@ -21,6 +21,7 @@ import {
 } from "../gateway/github-repository-publication-store.worker.js";
 import {
   readPersonalGitLabPublicationInDatabase,
+  readSharedGitLabPublicationInDatabase,
   listUnreportedPersonalGitLabPublicationsInDatabase,
 } from "../gateway/gitlab-personal-publication-store.worker.js";
 import type { EngineConnection } from "../infra/sql-connection.js";
@@ -94,6 +95,13 @@ export const publicationReadOperations = {
   ) => ({
     type: "githubPublications.gitlabPersonalRead" as const,
     row: readPersonalGitLabPublicationInDatabase(db, input.owner, input.issuer, input.request),
+  }),
+  "githubPublications.gitlabSharedRead": (
+    input: Parameters<typeof readSharedGitLabPublicationInDatabase>[1],
+    db,
+  ) => ({
+    type: "githubPublications.gitlabSharedRead" as const,
+    row: readSharedGitLabPublicationInDatabase(db, input),
   }),
   "githubPublications.gitlabPersonalUnreported": (_input: undefined, db) => ({
     type: "githubPublications.gitlabPersonalUnreported" as const,

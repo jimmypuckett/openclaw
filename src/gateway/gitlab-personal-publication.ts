@@ -19,6 +19,10 @@ import {
 } from "./gitlab-personal-publication-identity.js";
 import { prepareManagedGitLabPublicationCredential } from "./gitlab-personal-publication-managed.js";
 import {
+  readGitLabPublicationForAction,
+  readSharedGitLabPublicationForAction,
+} from "./gitlab-personal-publication-read.js";
+import {
   readAcceptedGitLabPublication,
   projectPersonalGitLabTerminalResult,
 } from "./gitlab-personal-publication-row.js";
@@ -175,7 +179,7 @@ export async function readGitLabPublicationPublisher(
   action: GitLabPublicationReadAction,
   requestId: string,
 ) {
-  const row = await readPersonalGitLabPublicationAsync(action.owner, issuerFor(options), {
+  const row = await readGitLabPublicationForAction(action, issuerFor(options), {
     requestId,
   });
   action.assertCurrent();
@@ -194,12 +198,18 @@ export async function readPersonalGitLabPublicationOptions(
   const connection = await readUserGitLabConnectionAsync(action.owner, issuer);
   action.assertCurrent();
   const selected = connection?.selection;
-  const pendingRow = await readPersonalGitLabPublicationAsync(
+  const personalRow = await readPersonalGitLabPublicationAsync(
     action.owner,
     issuer,
     idempotencyKey
       ? { sessionId: action.sessionId, idempotencyKey }
       : { sessionKey: action.sessionKey, agentId: action.agentId },
+  );
+  const sharedRow = await readSharedGitLabPublicationForAction(
+    action,
+    issuer,
+    idempotencyKey ? { idempotencyKey } : { pending: true },
+    { allowUnavailableWorkspace: true },
   );
   const configuredShared = resolveEffectiveGitLabToolIdentity({
     config: options.context.getRuntimeConfig(),
@@ -219,24 +229,23 @@ export async function readPersonalGitLabPublicationOptions(
     }
   }
   try {
-    const pendingPublisher = pendingRow
-      ? publicationPublisher(assertReceiptSession(pendingRow, action).publisher)
-      : null;
-    const pending = pendingRow
-      ? projectStatus(
-          pendingRow,
-          action,
-          pendingPublisher?.source === "personal"
-            ? selected?.kind === "connected" && !selected.refreshFailure
+    const personalPending =
+      personalRow &&
+      publicationPublisher(assertReceiptSession(personalRow, action).publisher).source ===
+        "personal"
+        ? projectStatus(
+            personalRow,
+            action,
+            selected?.kind === "connected" && !selected.refreshFailure
               ? {
                   publisher: { source: "personal" },
                   generation: connection!.generation,
                   account: selected.account,
                 }
-              : null
-            : sharedCredential,
-        )
-      : null;
+              : null,
+          )
+        : null;
+    const sharedPending = sharedRow ? projectStatus(sharedRow, action, sharedCredential) : null;
     let target: Awaited<ReturnType<typeof targetFor>> | null = null;
     try {
       target = await targetFor(options, action);
@@ -279,8 +288,8 @@ export async function readPersonalGitLabPublicationOptions(
         : configuredShared
           ? ("unverified" as const)
           : ("unavailable" as const),
-      pendingPersonal: pendingPublisher?.source === "personal" ? pending : null,
-      latestShared: pendingPublisher && pendingPublisher.source !== "personal" ? pending : null,
+      pendingPersonal: personalPending,
+      latestShared: sharedPending,
       target: target ? { repository: target.repository, branch: target.branch } : null,
     };
     return result;
@@ -295,7 +304,7 @@ export async function readPersonalGitLabPublicationStatus(
   credential: GitLabPublicationCredential | null,
   requestId: string,
 ) {
-  const row = await readPersonalGitLabPublicationAsync(action.owner, issuerFor(options), {
+  const row = await readGitLabPublicationForAction(action, issuerFor(options), {
     requestId,
   });
   action.assertCurrent();
@@ -319,11 +328,9 @@ export async function requestPersonalGitLabPublication(
   params: SessionGitLabPublishParams,
 ) {
   const requestId = requestIdFor(action, issuerFor(options), params.idempotencyKey);
-  const existing = await readPersonalGitLabPublicationAsync(
-    action.owner,
-    credential.account.issuer,
-    { requestId },
-  );
+  const existing = await readGitLabPublicationForAction(action, credential.account.issuer, {
+    requestId,
+  });
   if (existing) {
     const saved = assertReceiptSession(existing, action);
     if (
@@ -337,11 +344,15 @@ export async function requestPersonalGitLabPublication(
     }
     return projectStatus(existing, action, credential).result;
   }
-  const unresolved = await readPersonalGitLabPublicationAsync(
-    action.owner,
-    credential.account.issuer,
-    { sessionKey: action.sessionKey, agentId: action.agentId },
-  );
+  const unresolved =
+    credential.publisher.source === "personal"
+      ? await readPersonalGitLabPublicationAsync(action.owner, credential.account.issuer, {
+          sessionKey: action.sessionKey,
+          agentId: action.agentId,
+        })
+      : await readSharedGitLabPublicationForAction(action, credential.account.issuer, {
+          pending: true,
+        });
   if (
     unresolved &&
     unresolved.session_id === action.sessionId &&
@@ -394,7 +405,7 @@ export async function confirmPersonalGitLabPublication(
   credential: GitLabPublicationCredential,
   params: SessionGitLabConfirmParams,
 ) {
-  const row = await readPersonalGitLabPublicationAsync(action.owner, issuerFor(options), {
+  const row = await readGitLabPublicationForAction(action, issuerFor(options), {
     requestId: params.requestId,
   });
   const saved = row ? assertReceiptSession(row, action) : null;

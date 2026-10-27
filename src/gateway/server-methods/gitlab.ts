@@ -82,7 +82,7 @@ async function selectedPublicationCredential(
   }
   const service = options.context.gitlabOAuthService;
   if (!service) {
-    throw new Error("Personal GitLab is unavailable; retry after Gateway startup.");
+    throw new Error("My GitLab is unavailable; retry after Gateway startup.");
   }
   return personalGitLabPublicationCredential(await service.credential(action));
 }
@@ -115,13 +115,13 @@ async function personal<T>(
     const action = await preparePersonalForgeAction(options, "operator.read", undefined, "GitLab");
     const service = options.context.gitlabOAuthService;
     if (!service) {
-      throw new Error("Personal GitLab is unavailable; retry after Gateway startup.");
+      throw new Error("My GitLab is unavailable; retry after Gateway startup.");
     }
     const result = await run(action, service);
     action.assertCurrent();
     options.respond(true, result);
   } catch (error) {
-    respondFailure(options, error, "Personal GitLab action failed.");
+    respondFailure(options, error, "My GitLab action failed.");
   }
 }
 

@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import {
+  createGitLabManagedOAuthRecord,
+  writeGitLabManagedOAuthRecord,
+} from "../agents/gitlab-managed-records.js";
+import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
 } from "../state/openclaw-state-db.js";
@@ -9,6 +13,10 @@ import { disconnectedUserGitLabConnection } from "../state/user-gitlab-connectio
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
+  managedGitLabPublicationGeneration,
+  type GitLabPublicationPublisher,
+} from "./gitlab-personal-publication-identity.js";
+import {
   personalGitLabRequestDigest,
   type PersonalGitLabPublicationRow,
 } from "./gitlab-personal-publication-store.js";
@@ -16,6 +24,7 @@ import {
   claimPersonalGitLabPublicationInDatabase,
   insertPersonalGitLabPublicationInDatabase,
   readPersonalGitLabPublicationInDatabase,
+  readSharedGitLabPublicationInDatabase,
   requirePersonalGitLabPublicationConfirmationInDatabase,
   writePersonalGitLabPublicationInDatabase,
 } from "./gitlab-personal-publication-store.worker.js";
@@ -196,5 +205,192 @@ it("fences the old execution after restart and replacement claim", async () => {
       ),
     );
     expect(written.head_commit).toBe("b".repeat(40));
+  });
+});
+
+it("blocks cross-requester and cross-source writes to one unresolved workspace without sharing private receipts", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    const alice = ensureProfileForEmail("gitlab-shared-alice@example.test").id;
+    const bob = ensureProfileForEmail("gitlab-shared-bob@example.test").id;
+    const account = {
+      issuer,
+      accountId: 42,
+      login: "managed-bot",
+      name: "Managed Bot",
+      commitEmail: "managed-bot@example.test",
+    };
+    const record = createGitLabManagedOAuthRecord({
+      profileId: "glp_dddddddddddddddddddddddddddddddd",
+      scope: "system",
+      agentId: "main",
+      account,
+      tokens: {
+        accessToken: "synthetic-shared-access",
+        refreshToken: "synthetic-shared-refresh",
+        expiresAtMs: Date.now() + 3600000,
+        scopes: ["api", "write_repository"],
+      },
+    });
+    await writeGitLabManagedOAuthRecord(record);
+    const personal = await replaceUserGitLabConnection(
+      bob,
+      issuer,
+      undefined,
+      {
+        ...disconnectedUserGitLabConnection(issuer),
+        selection: {
+          kind: "connected",
+          account: { issuer, accountId: 42, login: "managed-bot" },
+          tokens: {
+            accessToken: "synthetic-personal-access",
+            refreshToken: "synthetic-personal-refresh",
+            expiresAtMs: Date.now() + 3600000,
+            scopes: ["api"],
+          },
+        },
+      },
+      current,
+    );
+    const publisher: GitLabPublicationPublisher = {
+      source: "system-configured",
+      profileId: record.profileId,
+      recordCreatedAtMs: record.createdAtMs,
+    };
+    const now = Date.now();
+    const sessionId = randomUUID();
+    const makeRow = (params: {
+      owner: string;
+      publisher: GitLabPublicationPublisher;
+      generation: string;
+      branch: string;
+      idempotencyKey?: string;
+    }): PersonalGitLabPublicationRow => {
+      const requestId = randomUUID();
+      const receipt = {
+        target: {
+          issuer,
+          projectId: 12,
+          projectPath: "org/repo",
+          gitUrl: `${issuer}/org/repo.git`,
+          webUrl: `${issuer}/org/repo`,
+          baseBranch: "master",
+        },
+        actor: { accountId: 42, login: "managed-bot" },
+        publisher: params.publisher,
+        sessionIdentity: {
+          sessionId,
+          sessionKey: "agent:main:shared-test",
+          agentId: "main",
+          lifecycleRevision: null,
+        },
+        sourceId: "shared-worktree",
+        worktreeId: "shared-worktree",
+        repositoryFingerprint: "shared-fingerprint",
+        branch: params.branch,
+        sourceHead: "b".repeat(40),
+        baseTree: "a".repeat(40),
+        workspaceHead: "c".repeat(40),
+        repositoryRoot: "/tmp/repo",
+        sourceIndexTree: "a".repeat(40),
+        createdAtMs: now,
+      };
+      const row: PersonalGitLabPublicationRow = {
+        request_id: requestId,
+        owner_profile_id: params.owner,
+        issuer,
+        connection_generation: params.generation,
+        idempotency_key: params.idempotencyKey ?? randomUUID(),
+        request_digest: "",
+        session_id: sessionId,
+        session_key: "agent:main:shared-test",
+        agent_id: "main",
+        session_lifecycle_revision: null,
+        worktree_id: "shared-worktree",
+        repository_fingerprint: "shared-fingerprint",
+        identity_account_id: 42,
+        identity_login: "managed-bot",
+        branch: params.branch,
+        receipt_json: JSON.stringify(receipt),
+        status: "requested",
+        gateway_instance_id: null,
+        execution_id: null,
+        head_commit: null,
+        pull_request_url: null,
+        error_code: null,
+        next_action: null,
+        last_effect: null,
+        effect_state: null,
+        push_observation: null,
+        result_json: null,
+        created_at_ms: now,
+        updated_at_ms: now,
+        reported_at_ms: null,
+      };
+      row.request_digest = personalGitLabRequestDigest(row);
+      return row;
+    };
+    const generation = managedGitLabPublicationGeneration({
+      publisher,
+      issuer,
+      accountId: 42,
+      login: "managed-bot",
+    });
+    const first = makeRow({ owner: alice, publisher, generation, branch: "topic" });
+    runOpenClawStateWriteTransaction((database) =>
+      insertPersonalGitLabPublicationInDatabase(database, first, current),
+    );
+    const bobShared = makeRow({
+      owner: bob,
+      publisher,
+      generation,
+      branch: "topic",
+      idempotencyKey: first.idempotency_key,
+    });
+    expect(() =>
+      runOpenClawStateWriteTransaction((database) =>
+        insertPersonalGitLabPublicationInDatabase(database, bobShared, current),
+      ),
+    ).toThrow("workspace has an unresolved request");
+    const bobPersonal = makeRow({
+      owner: bob,
+      publisher: { source: "personal" },
+      generation: personal.generation,
+      branch: "topic",
+    });
+    expect(() =>
+      runOpenClawStateWriteTransaction((database) =>
+        insertPersonalGitLabPublicationInDatabase(database, bobPersonal, current),
+      ),
+    ).toThrow("workspace has an unresolved request");
+    const otherBranch = makeRow({
+      owner: bob,
+      publisher: { source: "personal" },
+      generation: personal.generation,
+      branch: "other-topic",
+    });
+    runOpenClawStateWriteTransaction((database) =>
+      insertPersonalGitLabPublicationInDatabase(database, otherBranch, current),
+    );
+    const sharedAfterPersonal = makeRow({
+      owner: alice,
+      publisher,
+      generation,
+      branch: "other-topic",
+    });
+    expect(() =>
+      runOpenClawStateWriteTransaction((database) =>
+        insertPersonalGitLabPublicationInDatabase(database, sharedAfterPersonal, current),
+      ),
+    ).toThrow("workspace has an unresolved request");
+    expect(
+      readSharedGitLabPublicationInDatabase(openOpenClawStateDatabase().db, {
+        issuer,
+        sessionId,
+        sessionKey: first.session_key,
+        agentId: "main",
+        lifecycleRevision: null,
+        selector: { requestId: otherBranch.request_id },
+      }),
+    ).toBeUndefined();
   });
 });

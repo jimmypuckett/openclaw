@@ -25,6 +25,7 @@ import {
   sameGitLabPublicationPublisher,
   type GitLabPublicationCredential,
 } from "./gitlab-personal-publication-identity.js";
+import { readSharedGitLabPublicationForAction } from "./gitlab-personal-publication-read.js";
 import {
   createPersonalGitLabPublicationRow,
   readAcceptedGitLabPublication,
@@ -83,11 +84,14 @@ export async function runPersonalGitLabPublication(
     }
   };
   assertSelection();
-  const existing = await readPersonalGitLabPublicationAsync(
-    action.owner,
-    credential.account.issuer,
-    { requestId: input.requestId },
-  );
+  const existing =
+    credential.publisher.source === "personal"
+      ? await readPersonalGitLabPublicationAsync(action.owner, credential.account.issuer, {
+          requestId: input.requestId,
+        })
+      : await readSharedGitLabPublicationForAction(action, credential.account.issuer, {
+          requestId: input.requestId,
+        });
   if (existing) {
     const accepted = readAcceptedGitLabPublication(existing);
     if (

@@ -446,6 +446,23 @@ it.each([
         expect(saved.publisher).toEqual(publisher);
         expect(first?.connection_generation).toBe(generation);
         expect(first?.owner_profile_id).toBe(owner);
+        const otherOwner = ensureProfileForEmail(`gitlab-${fault}-collaborator@example.test`).id;
+        const collaborator = { ...action, owner: otherOwner };
+        const collaboratorOptions = await readPersonalGitLabPublicationOptions(
+          options as never,
+          collaborator as never,
+        );
+        expect(collaboratorOptions.pendingPersonal).toBeNull();
+        expect(collaboratorOptions.latestShared?.result).toMatchObject({
+          requestId: acceptedRequestId,
+          publisher: { source: publisher.source, login: publicationAccount.login },
+        });
+        await expect(
+          requestPersonalGitLabPublication(options as never, collaborator as never, credential, {
+            ...input,
+            idempotencyKey: randomUUID(),
+          }),
+        ).rejects.toThrow("unresolved");
         const personalSameActor: GitLabPublicationCredential = {
           ...credential,
           publisher: { source: "personal" },
@@ -495,18 +512,39 @@ it.each([
         expect(posts).toBe(1);
         await writeGitLabManagedOAuthRecord(managedRecord!, interrupted);
         expect(
-          await confirmPersonalGitLabPublication(options as never, action as never, credential, {
-            requestId: acceptedRequestId,
-            ...status.confirmation!,
-          } as never),
+          await confirmPersonalGitLabPublication(
+            options as never,
+            collaborator as never,
+            credential,
+            {
+              requestId: acceptedRequestId,
+              ...status.confirmation!,
+            } as never,
+          ),
         ).toMatchObject({
           status: "published",
           publisher: { source: publisher.source, login: publicationAccount.login },
         });
+        expect(
+          (
+            await readPersonalGitLabPublicationAsync(owner, issuer, {
+              requestId: acceptedRequestId,
+            })
+          )?.owner_profile_id,
+        ).toBe(owner);
         expect(posts).toBe(1);
         return;
       }
       if (fault === "lost-mr-response") {
+        const otherOwner = ensureProfileForEmail("gitlab-private-collaborator@example.test").id;
+        await expect(
+          readPersonalGitLabPublicationStatus(
+            options as never,
+            { ...action, owner: otherOwner } as never,
+            null,
+            acceptedRequestId,
+          ),
+        ).rejects.toThrow("not found");
         await expect(
           requestPersonalGitLabPublication(options as never, action as never, credential, {
             ...input,

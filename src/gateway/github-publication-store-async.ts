@@ -420,6 +420,13 @@ export async function readPersonalGitLabPublicationAsync(
   return result?.type === "githubPublications.gitlabPersonalRead" ? result.row : undefined;
 }
 
+export async function readSharedGitLabPublicationAsync(
+  input: PublicationReadOperations["githubPublications.gitlabSharedRead"]["input"],
+) {
+  const result = await read({ type: "githubPublications.gitlabSharedRead", input });
+  return result?.type === "githubPublications.gitlabSharedRead" ? result.row : undefined;
+}
+
 export async function listUnreportedPersonalGitLabPublicationsAsync() {
   const result = await read({
     type: "githubPublications.gitlabPersonalUnreported",
