@@ -84,15 +84,18 @@ export async function readManagedGitLabProfileToken(
       },
     );
     const document = parseDocument(raw, { prettyErrors: false });
-    if (document.errors.length || document.warnings.length) return undefined;
+    if (document.errors.length || document.warnings.length) {
+      return undefined;
+    }
     const value: unknown = document.toJS({ maxAliasCount: 0 });
     if (
       !isRecord(value) ||
       value.host !== host ||
       !isRecord(value.hosts) ||
       Object.keys(value.hosts).length !== 1
-    )
+    ) {
       return undefined;
+    }
     const selected = value.hosts[host];
     if (
       !isRecord(selected) ||
@@ -106,8 +109,9 @@ export async function readManagedGitLabProfileToken(
       !selected.token ||
       selected.token.length > 4096 ||
       /[\r\n\0]/u.test(selected.token)
-    )
+    ) {
       return undefined;
+    }
     registerSecretValueForRedaction(selected.token);
     return selected.token;
   } catch {

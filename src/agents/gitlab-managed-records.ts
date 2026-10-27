@@ -152,10 +152,14 @@ export function gitLabManagedOAuthRecordName(id: string): string {
   return `gitlab-oauth-${id.slice(4)}`;
 }
 function parse<T>(raw: string | undefined, schema: z.ZodType<T>): T | undefined {
-  if (raw === undefined) return undefined;
+  if (raw === undefined) {
+    return undefined;
+  }
   try {
     const value: unknown = JSON.parse(raw);
-    if (value && typeof value === "object" && Object.hasOwn(value, "__proto__")) return undefined;
+    if (value && typeof value === "object" && Object.hasOwn(value, "__proto__")) {
+      return undefined;
+    }
     const result = schema.safeParse(value);
     return result.success ? result.data : undefined;
   } catch {
@@ -178,7 +182,9 @@ export async function readGitLabManagedSetupRecord(
 ): Promise<GitLabManagedSetupRecord | undefined> {
   requestId.parse(id);
   const value = parse(await readHiddenGitLabSecretRecord({ name: id }), setupSchema);
-  if (value?.requestId !== id || value.expiresAtMs <= Date.now()) return undefined;
+  if (value?.requestId !== id || value.expiresAtMs <= Date.now()) {
+    return undefined;
+  }
   redactSetup(value);
   return value;
 }
@@ -187,7 +193,9 @@ export async function deleteGitLabManagedSetupRecord(params: {
   initiatorProfileId: string;
 }): Promise<boolean> {
   const record = await readGitLabManagedSetupRecord(params.requestId);
-  if (!record || record.initiatorProfileId !== params.initiatorProfileId) return false;
+  if (!record || record.initiatorProfileId !== params.initiatorProfileId) {
+    return false;
+  }
   await deleteHiddenGitLabSecretRecord({ name: params.requestId });
   return true;
 }
@@ -195,7 +203,9 @@ export async function listGitLabManagedSetupRecords(): Promise<GitLabManagedSetu
   const rows = await listHiddenGitLabSecretRecords({ prefix: "gitlab-setup" });
   return rows.flatMap(({ name, value }) => {
     const record = parse(value, setupSchema);
-    if (record?.requestId !== name || record.expiresAtMs <= Date.now()) return [];
+    if (record?.requestId !== name || record.expiresAtMs <= Date.now()) {
+      return [];
+    }
     redactSetup(record);
     return [record];
   });
@@ -219,7 +229,9 @@ export async function consumeGitLabManagedSetupRecord(params: {
       },
     }),
   );
-  if (raw !== undefined) registerSecretValueForRedaction(raw);
+  if (raw !== undefined) {
+    registerSecretValueForRedaction(raw);
+  }
   const record = parse(raw, setupSchema);
   if (
     !record ||
@@ -252,9 +264,13 @@ export async function inspectGitLabManagedOAuthRecord(
   { state: "missing" } | { state: "invalid" } | { state: "valid"; record: GitLabManagedOAuthRecord }
 > {
   const raw = await readHiddenGitLabSecretRecord({ name: gitLabManagedOAuthRecordName(id) });
-  if (raw === undefined) return { state: "missing" };
+  if (raw === undefined) {
+    return { state: "missing" };
+  }
   const record = parse(raw, oauthSchema);
-  if (record?.profileId !== id) return { state: "invalid" };
+  if (record?.profileId !== id) {
+    return { state: "invalid" };
+  }
   redactOAuth(record);
   return { state: "valid", record };
 }
@@ -264,10 +280,14 @@ export async function listGitLabManagedOAuthRecords(): Promise<
   const rows = await listHiddenGitLabSecretRecords({ prefix: "gitlab-oauth" });
   return rows.flatMap(({ name, value }) => {
     const match = /^gitlab-oauth-([a-f0-9]{32})$/u.exec(name);
-    if (!match) return [];
+    if (!match) {
+      return [];
+    }
     const id = `glp_${match[1]}`;
     const record = parse(value, oauthSchema);
-    if (record) redactOAuth(record);
+    if (record) {
+      redactOAuth(record);
+    }
     return [{ profileId: id, record }];
   });
 }

@@ -13,9 +13,12 @@ vi.mock("../secrets/store/secret-store-hidden-managed-gitlab.js", () => ({
     expectedValue?: string;
     expectedAbsent?: boolean;
   }) => {
-    if (expectedAbsent && hidden.has(name)) throw new Error("record already exists");
-    if (expectedValue !== undefined && hidden.get(name) !== expectedValue)
+    if (expectedAbsent && hidden.has(name)) {
+      throw new Error("record already exists");
+    }
+    if (expectedValue !== undefined && hidden.get(name) !== expectedValue) {
       throw new Error("record changed");
+    }
     hidden.set(name, value);
   },
   readHiddenGitLabSecretRecord: async ({ name }: { name: string }) => hidden.get(name),
