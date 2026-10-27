@@ -67,6 +67,11 @@ starting a replacement. Disconnecting does not erase completed publication
 status or transfer accepted requests to another user. A managed publication also
 pins its System or agent source, profile and account generation. Replacing a
 selection cannot transfer recovery to a new profile, even for the same account.
+An authorized collaborator can observe and recover a shared request in the same
+session; its original requester and publisher remain recorded. An unresolved
+request blocks a competing publication on that exact session workspace and branch,
+including when another account is selected. Other users' private publication
+receipts are not exposed by shared discovery.
 
 ## Issue skills and other GitLab operations
 
