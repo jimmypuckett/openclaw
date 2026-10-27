@@ -216,7 +216,7 @@ export const GatewayConfigSchema = z
               !url.hash
             );
           }, "GitLab redirect URI must be HTTPS without credentials, query or fragment"),
-        projects: z.array(z.number().int().positive()).min(1).max(100),
+        projects: z.array(z.number().int().positive()).min(1).max(100).optional(),
       })
       .optional(),
     projects: z

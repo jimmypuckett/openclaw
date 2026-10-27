@@ -64,7 +64,7 @@ export async function runPersonalGitLabPublication(
     draft: rawInput.draft ?? true,
   };
   const config = options.context.getRuntimeConfig().gateway?.gitlab;
-  if (!config?.projects.includes(input.projectId)) {
+  if (!config || (config.projects && !config.projects.includes(input.projectId))) {
     throw new Error("GitLab publication project is not allowed.");
   }
   const placements = options.context.workerSessionPlacementService;
@@ -75,7 +75,7 @@ export async function runPersonalGitLabPublication(
     action.assertCurrent();
     credential.assertCurrent();
     const current = options.context.getRuntimeConfig().gateway?.gitlab;
-    if (!current?.projects.includes(input.projectId)) {
+    if (!current || (current.projects && !current.projects.includes(input.projectId))) {
       throw new Error("GitLab project authority changed.");
     }
   };
@@ -179,9 +179,7 @@ export async function runPersonalGitLabPublication(
           beforeRun: assertCurrent,
         });
         if (remote !== target.gitUrl) {
-          throw new Error(
-            "Session repository does not match the allowed canonical GitLab project.",
-          );
+          throw new Error("Session repository does not match the canonical GitLab project.");
         }
         if (row) {
           saved = readAcceptedGitLabPublication(row);

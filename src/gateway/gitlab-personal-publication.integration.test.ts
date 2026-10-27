@@ -99,6 +99,9 @@ it.each([
   "foreign-url-after-loss",
   "missing-source",
   "no-changes",
+  "project-allowlist-omitted",
+  "project-denied",
+  "project-policy-revoked",
 ] as const)("keeps native publication authority and exact Git state for %s", async (fault) =>
   withOpenClawTestState({ scenario: "minimal" }, async () => {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "gitlab-native-acceptance-"));
@@ -260,10 +263,16 @@ it.each([
         assertCurrent() {},
         withToken: async <T>(run: (token: string) => Promise<T>) => run("synthetic-token"),
       };
+      let projects: number[] | undefined =
+        fault === "project-allowlist-omitted" || fault === "project-policy-revoked"
+          ? undefined
+          : fault === "project-denied"
+            ? [99]
+            : [17];
       const options = {
         context: {
           getRuntimeConfig: () => ({
-            gateway: { gitlab: { issuer: `${issuer}/`, projects: [17] } },
+            gateway: { gitlab: { issuer: `${issuer}/`, projects } },
           }),
           workerSessionPlacementService: {
             workspaceResultInstanceId: () => "gitlab-fixture-gateway",
@@ -280,6 +289,15 @@ it.each([
         title: "Publish accepted change",
         draft: false,
       };
+      if (fault === "project-denied") {
+        await expect(
+          requestPersonalGitLabPublication(options as never, action as never, credential, input),
+        ).rejects.toThrow("GitLab publication project is not allowed");
+        expect(posts).toBe(0);
+        expect(state.pushes).toBe(0);
+        expect(git(cwd, "rev-parse", "HEAD")).toBe(source);
+        return;
+      }
       if (fault === "missing-source") {
         action.prepareSource = async () => {
           throw new Error("No native session source capability");
@@ -441,6 +459,31 @@ it.each([
           expect(posts).toBe(1);
           expect(state.pushes).toBe(1);
         }
+        return;
+      }
+      if (fault === "project-policy-revoked") {
+        projects = [99];
+        const status = await readPersonalGitLabPublicationStatus(
+          options as never,
+          action as never,
+          credential,
+          acceptedRequestId,
+        );
+        await expect(
+          confirmPersonalGitLabPublication(options as never, action as never, credential, {
+            requestId: acceptedRequestId,
+            ...status.confirmation!,
+          } as never),
+        ).rejects.toThrow("GitLab publication project is not allowed");
+        expect(posts).toBe(1);
+        expect(state.pushes).toBe(1);
+        expect(
+          (
+            await readPersonalGitLabPublicationAsync(owner, issuer, {
+              requestId: acceptedRequestId,
+            })
+          )?.status,
+        ).toBe("needs_confirmation");
         return;
       }
       const repeated = await requestPersonalGitLabPublication(

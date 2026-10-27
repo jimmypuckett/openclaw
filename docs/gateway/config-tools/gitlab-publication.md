@@ -18,7 +18,7 @@ shared account or an ambient CLI token.
 Register a non-confidential GitLab OAuth application supporting authorization code
 with PKCE. Enable `api` and `write_repository`, and register an exact HTTPS
 redirect URI under your control. Configure its public application ID, issuer and
-allowed numeric project IDs:
+an optional project restriction:
 
 ```json5
 {
@@ -27,6 +27,8 @@ allowed numeric project IDs:
       issuer: "https://gitlab.example.com",
       clientId: "YOUR_PUBLIC_APPLICATION_ID",
       redirectUri: "https://gateway.example.com/oauth/gitlab",
+      // Optional: restrict publication to these numeric project IDs.
+      // Omit to use the connected user's normal GitLab project access.
       projects: [17],
     },
   },
@@ -43,7 +45,7 @@ be completed once. Reconnect when refresh fails.
 
 The session must have a locally managed publication worktree and a canonical
 HTTPS `origin` on the configured issuer, ending in `.git`. The repository must
-resolve to an allowed project. The repository remote selects the provider;
+resolve to the exact canonical project using the connected user's access. The repository remote selects the provider;
 changing a branch does not change the provider or destination project.
 
 Publication records the selected human publisher, creates the Git commit with
