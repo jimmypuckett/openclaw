@@ -1,4 +1,6 @@
+import { isDeepStrictEqual } from "node:util";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { getRuntimeConfigSnapshot } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { createAbortError } from "../infra/abort-signal.js";
 import {
@@ -67,10 +69,13 @@ import type {
 import { formatUnavailableWorkdirFailure, resolveExecWorkdir } from "./bash-tools.exec-workdir.js";
 import { createExecSchema, execSchema } from "./bash-tools.schemas.js";
 import { clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
+import { assertManagedGitLabExecHost } from "./exec-identity-environment.js";
 import {
   createExecToolExecutionTimeoutResolver,
   resolveExecDefaultTimeoutSec,
 } from "./exec-tool-timeout.js";
+import { applyVerifiedGitLabAuthor } from "./gitlab-exec-author.js";
+import { prepareGitLabToolCredential } from "./gitlab-tool-identity.js";
 import { resolveStoredSubagentCapabilities } from "./subagents/spawn/subagent-capabilities.js";
 import { withPreparedSessionCapabilityRead } from "./subagents/spawn/subagent-session-store.js";
 import { EXEC_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
@@ -441,6 +446,11 @@ export function createExecTool(defaults?: ExecToolDefaults) {
           ...preparedRunEnvironment,
           warnings,
         });
+        assertManagedGitLabExecHost({
+          selected: preparedRunEnvironment.managedGitLabIdentity === true,
+          host,
+          sandboxProfileDir: sandbox?.gitlabProfileDir,
+        });
 
         const hostApprovalParams = () => ({
           approvalTransport,
@@ -499,6 +509,64 @@ export function createExecTool(defaults?: ExecToolDefaults) {
           host === "gateway" && preparedRunEnvironment.managedLocalIdentity
             ? preparedRunEnvironment.localIdentityEnv.GH_CONFIG_DIR
             : undefined;
+        let approvedGitLabActor: import("./gitlab-oauth-client.js").GitLabAccount | undefined;
+        let gitlabCanonicalOrigin = false;
+        const prepareGitLabCredential = preparedRunEnvironment.managedGitLabIdentity
+          ? async () => {
+              const config = defaults?.config ?? {};
+              const oauthConfig = config.gateway?.gitlab;
+              if (!oauthConfig) {
+                throw new Error(
+                  "Managed GitLab Identity is unavailable; configure its OAuth issuer.",
+                );
+              }
+              const credential = await prepareGitLabToolCredential({
+                config,
+                getCurrentConfig: () => getRuntimeConfigSnapshot() ?? config,
+                agentId: defaults?.executionAgentId ?? defaults?.agentId ?? "main",
+                oauthConfig,
+              });
+              if (
+                approvedGitLabActor &&
+                !isDeepStrictEqual(credential.account, approvedGitLabActor)
+              ) {
+                credential.close();
+                throw new Error("Managed GitLab actor changed after command approval.");
+              }
+              const profileDir = credential.env.GLAB_CONFIG_DIR;
+              if (!profileDir) {
+                credential.close();
+                throw new Error("Managed GitLab CLI profile is unavailable.");
+              }
+              if (host === "sandbox" && profileDir !== sandbox?.gitlabProfileDir) {
+                credential.close();
+                throw new Error("Sandbox GitLab Identity selection changed.");
+              }
+              return {
+                profileDir,
+                issuer: credential.issuer,
+                assertCurrent: credential.assertCurrent,
+                assertCurrentSync: credential.assertCurrentSync,
+                close: credential.close,
+                account: credential.account,
+                author: gitlabCanonicalOrigin ? credential.account : undefined,
+              };
+            }
+          : undefined;
+        if (prepareGitLabCredential) {
+          const credential = await prepareGitLabCredential();
+          try {
+            approvedGitLabActor = credential.account;
+            gitlabCanonicalOrigin = applyVerifiedGitLabAuthor({
+              workdir: host === "sandbox" ? sandbox!.workspaceDir : workdir,
+              issuer: credential.issuer,
+              author: credential.account,
+              env,
+            });
+          } finally {
+            credential.close();
+          }
+        }
 
         if (host === "gateway" && !bypassApprovals) {
           gatewayApproval = await processGatewayAllowlist({
@@ -506,6 +574,7 @@ export function createExecTool(defaults?: ExecToolDefaults) {
             workdir,
             secretEgressBindings,
             githubProfileDir,
+            prepareGitLabCredential,
             pathPrepend: defaultPathPrepend,
             pty: params.pty === true && !sandbox,
             safeBins,
@@ -562,6 +631,7 @@ export function createExecTool(defaults?: ExecToolDefaults) {
           env,
           secretEgressBindings,
           githubProfileDir,
+          prepareGitLabCredential,
           pathPrepend: defaultPathPrepend,
           sandbox,
           containerWorkdir,
