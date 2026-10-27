@@ -1368,6 +1368,16 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/gitlab:
+    dependencies:
+      typebox:
+        specifier: 1.4.2
+        version: 1.4.2
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
   extensions/gmi:
     devDependencies:
       '@openclaw/plugin-sdk':

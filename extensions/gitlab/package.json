@@ -1,0 +1,10 @@
+{
+  "name": "@openclaw/gitlab",
+  "version": "2026.10.7",
+  "private": true,
+  "description": "OpenClaw GitLab issues and discussions plugin",
+  "type": "module",
+  "dependencies": { "typebox": "1.4.2" },
+  "devDependencies": { "@openclaw/plugin-sdk": "workspace:*" },
+  "openclaw": { "extensions": ["./index.ts"] }
+}

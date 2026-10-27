@@ -25,6 +25,7 @@ const CORE_GATEWAY_HANDLER_MODULES = {
   board: () => import("./board.js").then((module) => module.boardHandlers),
   audit: () => import("./audit.js").then((module) => module.auditHandlers),
   "tools-gitlab": () => import("./tools-gitlab.js").then((module) => module.toolsGitLabHandlers),
+  "gitlab-issues": () => import("./gitlab-issues.js").then((module) => module.gitLabIssueHandlers),
   gitlab: () => import("./gitlab.js").then((module) => module.gitLabHandlers),
   users: () => import("./users.js").then((module) => module.usersHandlers),
   "users-mentionable": () =>

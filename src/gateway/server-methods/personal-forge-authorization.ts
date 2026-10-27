@@ -18,7 +18,12 @@ export type PersonalForgeAction = { owner: string; signal: AbortSignal; assertCu
 /** Intersect the live role ceiling with the socket grant, preserving scope implications. */
 export function currentPersonalForgeClient(
   options: Request,
-  scope: "operator.read" | "operator.write" | "operator.sessions.read" | "operator.admin",
+  scope:
+    | "operator.read"
+    | "operator.write"
+    | "operator.sessions.read"
+    | "operator.sessions.write"
+    | "operator.admin",
   owner?: string | { profileId: string; role: string | null; githubLogin?: string | null },
   label = "GitHub",
 ) {

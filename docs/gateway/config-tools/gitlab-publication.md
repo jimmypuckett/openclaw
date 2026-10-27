@@ -77,9 +77,15 @@ receipts are not exposed by shared discovery.
 
 ## Issue skills and other GitLab operations
 
-My GitLab authorizes browser-selected publication and does not supply its token
-to the agent's shell. Issue and other CLI skills use the explicitly configured
-System GitLab account or agent override. The Gateway verifies and refreshes that
+My GitLab authorizes publication and requester-bound issue/comment operations.
+The bundled GitLab plugin provides `gitlab_issues` for issue discovery, metadata,
+state changes, notes and threaded issue/MR discussions. Gateway requests bind
+the admitted requesting person, their current grant, issuer and project policy.
+Missing, ambiguous or revoked authority fails closed. The token stays inside
+Gateway HTTP calls and is never supplied to the agent's shell. Requester skills
+must use that tool and must not fall back to CLI credentials.
+
+Explicitly selected System/agent CLI operations remain separate. The Gateway verifies and refreshes that
 managed account before launch. The selected token is loaded at the child-process
 boundary and is excluded from the supervising environment and approval data.
 An unavailable selected profile fails closed. Skills must verify the actual actor

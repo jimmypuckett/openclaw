@@ -722,4 +722,18 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["sessions.gitlab.confirm", "gitlab", "operator.write", "2026.10"],
   ["sessions.gitlab.publish", "gitlab", "operator.write", "2026.10"],
   ["talk.client.say", "talk", "operator.talk", "2026.10"],
+  [
+    "tools.gitlab.issues.read",
+    "gitlab-issues",
+    "operator.sessions.read",
+    "2026.10",
+    { ...UNADVERTISED, ...PROFILE_DEPENDENT },
+  ],
+  [
+    "tools.gitlab.issues.write",
+    "gitlab-issues",
+    "operator.sessions.write",
+    "2026.10",
+    { ...UNADVERTISED, ...PROFILE_DEPENDENT },
+  ],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];

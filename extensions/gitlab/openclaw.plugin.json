@@ -1,0 +1,15 @@
+{
+  "id": "gitlab",
+  "name": "GitLab",
+  "description": "Requester-attributed GitLab issues, comments and discussions.",
+  "categories": ["developer-tools"],
+  "enabledByDefault": true,
+  "activation": { "onStartup": true },
+  "skills": ["./skills"],
+  "contracts": {
+    "tools": ["gitlab_issues"],
+    "gatewayMethodDispatch": ["authenticated-request"]
+  },
+  "toolMetadata": { "gitlab_issues": { "profiles": ["coding"] } },
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+}

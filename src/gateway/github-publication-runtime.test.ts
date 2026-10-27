@@ -6,6 +6,7 @@ import {
   mixedAgentConnection,
   useMixedAgentPair,
 } from "../infra/database-engine/mixed-agent.conformance.test-support.js";
+import { publicationRowDefaults } from "../state/github-publication-fixtures.test-support.js";
 import { githubPublicationReceipts } from "../state/github-publication-receipts.js";
 import { repositoryRow } from "../state/github-publication.worker.test-support.js";
 import {
@@ -320,11 +321,25 @@ function installPublicationRecoveryTests(engine: "sqlite" | "postgres") {
           facts: new Map([
             [
               JSON.stringify(["gitlab-personal", "gitlab-terminal-test"]),
-              { kind: "postimage", value: { status: "failed", reported_at_ms: null } },
+              {
+                kind: "postimage",
+                value: {
+                  ...publicationRowDefaults("gitlab-terminal-test"),
+                  status: "failed",
+                  connection_generation: "fixture-generation",
+                  issuer: "https://gitlab.example.test",
+                  owner_profile_id: "alice",
+                  push_observation: null,
+                  repository_fingerprint: "fixture-repository",
+                  session_lifecycle_revision: null,
+                  worktree_id: "fixture-worktree",
+                  receipt_json: "{}",
+                },
+              },
             ],
           ]),
         },
-      } as Parameters<typeof notify>[0],
+      },
       false,
     );
     await runtime.reconcilePublications();
