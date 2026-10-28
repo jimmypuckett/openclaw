@@ -91,6 +91,11 @@
       "types": "./dist/version.d.mts",
       "import": "./dist/version.mjs",
       "default": "./dist/version.mjs"
+    },
+    "./gitlab-issues": {
+      "types": "./dist/gitlab-issues.d.mts",
+      "import": "./dist/gitlab-issues.mjs",
+      "default": "./dist/gitlab-issues.mjs"
     }
   },
   "scripts": {

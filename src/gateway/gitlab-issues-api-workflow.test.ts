@@ -1,5 +1,5 @@
+import type { GitLabIssueOperation } from "@openclaw/gateway-protocol/gitlab-issues";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { GitLabIssueOperation } from "../../extensions/gitlab/api.js";
 import {
   executeGitLabIssueOperation,
   GitLabIssueOutcomeUnknownError,

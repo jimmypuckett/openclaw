@@ -1,10 +1,10 @@
-import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
-import { textResult } from "openclaw/plugin-sdk/tool-results";
 import {
   GitLabIssueOperationSchema,
   isGitLabIssueWrite,
   parseGitLabIssueOperation,
-} from "./api.js";
+} from "@openclaw/gateway-protocol/gitlab-issues";
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { textResult } from "openclaw/plugin-sdk/tool-results";
 
 export default definePluginEntry({
   id: "gitlab",

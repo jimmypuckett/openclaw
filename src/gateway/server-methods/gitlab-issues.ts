@@ -1,4 +1,7 @@
-import { isGitLabIssueWrite, parseGitLabIssueOperation } from "../../../extensions/gitlab/api.js";
+import {
+  isGitLabIssueWrite,
+  parseGitLabIssueOperation,
+} from "@openclaw/gateway-protocol/gitlab-issues";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/schema/error-codes.js";
 import { capturePluginLifecycleAuthority } from "../../plugins/registry-lifecycle.js";
 import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";

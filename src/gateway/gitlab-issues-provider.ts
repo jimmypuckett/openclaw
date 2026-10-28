@@ -1,5 +1,5 @@
+import type { GitLabIssueOperation } from "@openclaw/gateway-protocol/gitlab-issues";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import type { GitLabIssueOperation } from "../../extensions/gitlab/api.js";
 import { normalizeGitLabIssuer } from "../agents/gitlab-host.js";
 import type { PersonalGitLabCredential } from "./gitlab-personal-oauth.js";
 

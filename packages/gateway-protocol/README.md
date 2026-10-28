@@ -41,6 +41,9 @@ reserved `0.0.0` artifacts. Test it with the Gateway version you deploy; the roo
   formatting, and their TypeScript types. This is the main TypeBox-backed entry.
 - `@openclaw/gateway-protocol/schema` exports the TypeBox schema graph, including
   the `ProtocolSchemas` registry used by generators.
+- `@openclaw/gateway-protocol/gitlab-issues` exports the closed GitLab issue and
+  discussion operation schema, parser, and read/write classifier shared by the
+  Gateway and GitLab plugin.
 - `@openclaw/gateway-protocol/frame-guards` exports dependency-free structural
   guards for gateway event and response envelopes.
 - `@openclaw/gateway-protocol/client-info` exports client ID, mode, and capability

@@ -1370,9 +1370,9 @@ importers:
 
   extensions/gitlab:
     dependencies:
-      typebox:
-        specifier: 1.4.2
-        version: 1.4.2
+      '@openclaw/gateway-protocol':
+        specifier: workspace:*
+        version: link:../../packages/gateway-protocol
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*

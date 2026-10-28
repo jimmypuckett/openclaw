@@ -1,4 +1,4 @@
-import type { GitLabIssueOperation } from "../../extensions/gitlab/api.js";
+import type { GitLabIssueOperation } from "@openclaw/gateway-protocol/gitlab-issues";
 import { normalizeGitLabIssuer } from "../agents/gitlab-host.js";
 import { cancelUnreadResponseBody, readResponseWithLimit } from "../infra/http-response-body.js";
 import {
