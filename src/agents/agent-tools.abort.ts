@@ -4,6 +4,7 @@ import {
   getInternalToolExecutionPreparer,
 } from "../../packages/agent-core/src/internal-hooks.js";
 import { createAbortError } from "../infra/abort-signal.js";
+import { isPluginGatewayHandoffTool } from "../plugins/tool-handoff-result.js";
 /**
  * Combines per-call cancellation with run-level aborts while preserving
  * identity-backed metadata on wrapped tools.
@@ -72,6 +73,7 @@ function isTurnYieldCall(tool: AnyAgentTool, args: unknown): boolean {
   const input = asOptionalObjectRecord(args);
   return (
     tool.name === "sessions_yield" ||
+    isPluginGatewayHandoffTool(tool) ||
     (tool.name === "plugins" && input?.action === "reloadAndResume") ||
     (tool.name === "github_publish" &&
       (input?.action === "prepare_pr" ||

@@ -12,7 +12,10 @@ import { resolveMemoryCapabilityRegistration } from "./memory-state.js";
 import { capturePluginLifecycleAuthority } from "./registry-lifecycle.js";
 import type { PluginRegistry, PluginToolRegistration } from "./registry-types.js";
 import { withPluginRuntimePluginScope } from "./runtime/gateway-request-scope.js";
-import { isAcceptedPluginToolHandoffResult } from "./tool-handoff-result.js";
+import {
+  isAcceptedPluginToolHandoffResult,
+  markPluginGatewayHandoffTool,
+} from "./tool-handoff-result.js";
 import { copyPluginToolMeta } from "./tool-metadata.js";
 import type { OpenClawPluginToolContext } from "./types.js";
 
@@ -152,6 +155,9 @@ export function bindPluginToolCallbacks(
     preventExtensions: () => false,
   });
   copyPluginToolMeta(tool, wrapped);
+  if (entry.gatewayHandoffMethods && entry.names.length === 1 && tool.name === entry.names[0]) {
+    markPluginGatewayHandoffTool(wrapped);
+  }
   return wrapped;
 }
 
