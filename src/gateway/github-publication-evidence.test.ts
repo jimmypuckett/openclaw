@@ -20,6 +20,7 @@ import {
   ensureCanonicalUserProfileForEmail,
   syncCanonicalGitHubIdentity,
 } from "../state/user-profile-writes.js";
+import { updateForgeToolIdentityConfig } from "./forge-tool-identity-config.js";
 import { guestScopes } from "./github-publication-requester.test-support.js";
 import {
   githubPublicationTestMocks,
@@ -27,7 +28,6 @@ import {
   commandResult,
   SESSION_KEY,
 } from "./github-publication.test-support.js";
-import { updateGitHubToolIdentityConfig } from "./github-tool-identity-config.js";
 import { createContext as createRequestContext } from "./server-plugin-in-process-dispatch.test-support.js";
 import { createOperatorWsClient } from "./server/ws-connection/authenticated-request-dispatch.test-support.js";
 import { prepareGatewayConnectOperatorAccess } from "./server/ws-connection/connect-operator-access.js";
@@ -205,7 +205,8 @@ async function evidenceFixture(imported = false) {
     upload,
     config,
     async deselectPublisher() {
-      const next = await updateGitHubToolIdentityConfig({
+      const next = await updateForgeToolIdentityConfig({
+        provider: "github",
         scope: "system",
         agentId: "main",
         expectedIdentity: config.tools.github,

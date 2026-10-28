@@ -11,7 +11,7 @@ import {
   withNodeRepositoryPublication,
 } from "../node-host/node-worker-repository-transfers.js";
 import { NODE_WORKSPACE_EMPTY_MANIFEST_REF } from "../worker/node-workspace-transfer-protocol.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "./github-publication-git-transport.js";
+import { capturePublicationWorkspaceSnapshot } from "./forge-publication-workspace.js";
 import { prepareRepositoryPublicationRestore } from "./github-repository-publication-restore.js";
 import {
   REMOTE_GITHUB_PUBLICATION_SNAPSHOT_JS,
@@ -75,7 +75,7 @@ type Fixture = Awaited<ReturnType<typeof fixture>>;
 const indexPath = (f: Fixture) => path.resolve(f.cwd, f.git("rev-parse", "--git-path", "index"));
 const remoteSnapshot = async (f: Fixture, base = f.base) =>
   (await f.metadata(f.capture(base))).snapshot;
-const local = (f: Fixture) => captureGitHubPublicationWorkspaceSnapshot({ cwd: f.cwd });
+const local = (f: Fixture) => capturePublicationWorkspaceSnapshot({ cwd: f.cwd });
 const state = async (f: Fixture, names: string[] = []) => [
   f.git("rev-parse", "HEAD"),
   ...(await Promise.all([

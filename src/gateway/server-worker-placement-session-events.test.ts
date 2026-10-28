@@ -20,7 +20,7 @@ import {
   createTestGatewayScheduler,
 } from "../test-utils/gateway-scheduler-clock.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
-import { runPublicationCommand } from "./github-publication-git-transport.js";
+import { runPublicationCommand } from "./forge-publication-command.js";
 import {
   createGatewayGitHubPublicationRuntime,
   createGatewayWorkerPlacementRuntime,

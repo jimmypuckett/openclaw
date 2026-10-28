@@ -1,6 +1,6 @@
 import type { GitHubPublicationRow as PublicationRow } from "../state/github-publication-read.types.js";
+import { capturePublicationWorkspaceSnapshot } from "./forge-publication-workspace.js";
 import { readGitHubPublicationWorktreeOwner } from "./github-publication-availability.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "./github-publication-git-transport.js";
 import {
   bindAcceptedGitHubPublicationClaimSnapshotAsync,
   listGitHubPublicationsForClaimAsync,
@@ -74,7 +74,7 @@ export async function prepareGitHubPublicationClaimWorkspace(
       return;
     }
   }
-  const snapshot = await captureGitHubPublicationWorkspaceSnapshot({
+  const snapshot = await capturePublicationWorkspaceSnapshot({
     cwd: worktree.path,
     assertCurrent: () => {
       worktreeOwner.assertCurrent();

@@ -7,6 +7,11 @@ import type {
   GitHubPublicationRow,
 } from "../state/github-publication-read.types.js";
 import { executeExistingOpenClawStateRead } from "../state/openclaw-state-db-readonly.js";
+import {
+  createPublicationCommandRunner,
+  runPublicationCommand,
+} from "./forge-publication-command.js";
+import { assertSafeGitPublicationWorkspace } from "./forge-publication-workspace.js";
 import { readLocalGitHubPublicationWorktreeOwner } from "./github-publication-availability.js";
 import {
   createGitHubPublicationExecutionIdentity,
@@ -17,11 +22,6 @@ import {
   GitHubPublicationRecoveryPendingError,
   recoverGitHubPublicationBranchAndIndex,
 } from "./github-publication-git-index.js";
-import {
-  assertSafeGitPublicationWorkspace,
-  createGitHubPublicationCommandRunner,
-  runPublicationCommand,
-} from "./github-publication-git-transport.js";
 import { reconcileGitHubPublicationPullRequest } from "./github-publication-pull-requests.js";
 import { projectGitHubPublicationResult } from "./github-publication-receipt.js";
 import { prepareGitHubPublicationTarget } from "./github-publication-target.js";
@@ -134,7 +134,7 @@ export async function prepareGitHubPublicationWorkspaceRecovery<
     }
     owner.assertCurrent();
   };
-  const commands = createGitHubPublicationCommandRunner(assertCustody);
+  const commands = createPublicationCommandRunner(assertCustody);
   try {
     await commands.step(() =>
       assertSafeGitPublicationWorkspace(owner.worktree.path, runPublicationCommand),

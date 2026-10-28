@@ -50,6 +50,7 @@ import { warnPluginSdkDeprecation } from "../plugins/sdk-deprecation.js";
 import { getOrCreatePromise } from "../shared/lazy-promise.js";
 import { isRecoverableOAuthRefreshFailure } from "../shared/oauth-refresh-outcome.js";
 import { settlesWithin } from "../shared/settle-within.js";
+import { updateForgeToolIdentityConfig } from "./forge-tool-identity-config.js";
 import { assertGitHubCliAvailable } from "./github-cli-preflight.js";
 import { pollGitHubDeviceFlow, startGitHubDeviceFlow } from "./github-oauth-device-flow.js";
 import {
@@ -71,7 +72,6 @@ import {
   type ConfiguredOAuthIdentity,
 } from "./github-oauth-lifecycle-helpers.js";
 import { createPersonalGitHubOAuthLifecycle } from "./github-personal-oauth.js";
-import { updateGitHubToolIdentityConfig } from "./github-tool-identity-config.js";
 
 type GitHubOAuthLifecycle = ReturnType<typeof createGitHubOAuthLifecycle>;
 
@@ -241,7 +241,8 @@ export function createGitHubOAuthLifecycle(params: {
                   email: `${account.accountId}+${account.login}@users.noreply.github.com`,
                 },
           };
-          nextConfig = await updateGitHubToolIdentityConfig({
+          nextConfig = await updateForgeToolIdentityConfig({
+            provider: "github",
             scope: record.scope,
             agentId: record.agentId,
             identity,

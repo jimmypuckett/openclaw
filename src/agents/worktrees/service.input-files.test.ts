@@ -11,7 +11,7 @@ import {
   resetConfigRuntimeState,
   setRuntimeConfigSnapshot,
 } from "../../config/runtime-snapshot.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "../../gateway/github-publication-git-transport.js";
+import { capturePublicationWorkspaceSnapshot } from "../../gateway/forge-publication-workspace.js";
 import { prepareNodeWorkspaceTransferSnapshot } from "../../gateway/worker-environments/node-workspace-transfer-snapshot.js";
 import { prepareWorkerTurnMedia } from "../../gateway/worker-environments/worker-turn-media.js";
 import { parseWorkerWorkspaceManifest } from "../../gateway/worker-environments/workspace-manifest.js";
@@ -184,7 +184,7 @@ it.each(["writable sandbox", "cloud"])(
         path.join(producerRoot, "project-output.png"),
       );
       const assertPublication = async (root: string) => {
-        const captured = await captureGitHubPublicationWorkspaceSnapshot({ cwd: root });
+        const captured = await capturePublicationWorkspaceSnapshot({ cwd: root });
         const files = (
           await requireGit(root, ["ls-tree", "-r", "--name-only", captured.workspaceTree])
         ).split("\n");

@@ -14,10 +14,8 @@ import { canUploadGitHubPublicationEvidence } from "../agents/sandbox/github-pub
 import type { SandboxContext } from "../agents/sandbox/types.js";
 import { cancelUnreadResponseBody, readResponseWithLimit } from "../infra/http-response-body.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
-import {
-  githubPublicationApiArgs,
-  runPublicationCommand,
-} from "./github-publication-git-transport.js";
+import { runPublicationCommand } from "./forge-publication-command.js";
+import { githubPublicationApiArgs } from "./github-publication-git-transport.js";
 
 const MEDIA_TYPES = new Map([
   [".png", "image/png"],

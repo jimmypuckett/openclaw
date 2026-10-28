@@ -4,6 +4,7 @@ import path from "node:path";
 import { resolveExecutablePath } from "../infra/executable-path.js";
 import { gitNullConfigPath } from "../infra/git-exec.js";
 import { runCommandBuffered } from "../process/exec.js";
+import { publicationPushArgs } from "./forge-publication-git.js";
 import type {
   GitLabPublicationCredentials,
   GitLabPublicationTarget,
@@ -199,16 +200,12 @@ export async function pushGitLabPublicationCommit(params: {
   return await params.credentials.withToken(async (token) => {
     params.assertCurrent();
     await params.git.run(
-      [
-        "push",
-        "--porcelain",
-        `--force-with-lease=refs/heads/${params.branch}:${params.expectedHead ?? ""}`,
-        "--no-follow-tags",
-        "--recurse-submodules=no",
-        "--",
+      publicationPushArgs(
         params.target.gitUrl,
-        `${params.git.headCommit}:refs/heads/${params.branch}`,
-      ],
+        params.git.headCommit,
+        params.branch,
+        params.expectedHead ?? "",
+      ),
       token,
     );
   });

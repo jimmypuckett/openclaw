@@ -1,0 +1,45 @@
+const worktreeConfigArgs: readonly string[] = [
+  "git",
+  "config",
+  "--local",
+  "--includes",
+  "--bool",
+  "--default=false",
+  "--get",
+  "extensions.worktreeConfig",
+];
+
+export function publicationUnsafeConfigArgs(scope: "--local" | "--worktree"): string[] {
+  return [
+    "git",
+    "config",
+    scope,
+    "--includes",
+    "--get-regexp",
+    "^(core\\.(alternaterefscommand|askpass|fsmonitor|gitproxy|sshcommand|worktree)|credential\\..*helper|filter\\..*|http\\..*|include(if)?\\..*|push\\..*|remote\\..*\\.(proxy|receivepack|uploadpack|vcs)|uploadpack\\.packobjectshook|url\\..*\\.(insteadof|pushinsteadof))$",
+  ];
+}
+
+// Shared by node-executed capture and restore. Even intent-to-add can run clean
+// conversion while Git rewrites racily clean entries elsewhere in the index.
+export const PUBLICATION_CONFIG_GUARD = {
+  worktreeConfigArgs,
+  script: String.raw`
+const scopes = ["--local"];
+const worktreeConfig = spawnSync("git", ${JSON.stringify(worktreeConfigArgs.slice(1))}, { cwd, env, timeout: 60000, maxBuffer: 128 * 1024 });
+if (worktreeConfig.error || worktreeConfig.status !== 0) {
+  throw new Error("Publication workspace has unsupported Git transport configuration");
+}
+// Git rejects --worktree on linked checkouts unless the separate config is enabled.
+if (worktreeConfig.stdout.toString("utf8").trim() === "true") scopes.push("--worktree");
+for (const scope of scopes) {
+  const result = spawnSync("git", ["config", scope, "--includes", "--get-regexp",
+    ${JSON.stringify(publicationUnsafeConfigArgs("--local").at(-1))}], {
+    cwd, env, timeout: 60000, maxBuffer: 128 * 1024,
+  });
+  if (result.error || result.status !== 1 || result.stdout.length) {
+    throw new Error("Publication workspace has unsupported Git transport configuration");
+  }
+}
+`,
+};

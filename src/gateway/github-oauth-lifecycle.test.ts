@@ -92,8 +92,9 @@ vi.mock("../agents/github-tool-identity.js", async (importOriginal) => {
   };
 });
 
-vi.mock("./github-tool-identity-config.js", () => ({
-  updateGitHubToolIdentityConfig: mocks.updateConfig,
+vi.mock("./forge-tool-identity-config.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./forge-tool-identity-config.js")>()),
+  updateForgeToolIdentityConfig: mocks.updateConfig,
 }));
 
 vi.mock("./github-cli-preflight.js", async (importOriginal) => {

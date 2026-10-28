@@ -3424,7 +3424,7 @@ node --import ./scripts/tsx.mjs scripts/perf/publication-spawn-measure.ts \
 ```
 
 Use `--transport-owner` with a baseline sibling of
-`src/gateway/github-publication-git-transport.ts` to compare the same source tree.
+`src/gateway/forge-publication-command.ts` to compare the same source tree.
 Supply a sibling for each side so both register the same resolver hook.
 Both sides must use identical fixed work counts (at least 1,000 operations), fresh
 state directories, and a shared `--start-at` epoch in milliseconds. Hold the quiet

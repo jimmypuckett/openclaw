@@ -10,11 +10,13 @@ import type { SandboxContext } from "../agents/sandbox/types.js";
 import { withWorktreeGitConfig } from "../agents/worktrees/checkout-git-config.js";
 import { resolveGitMetadataPath } from "../agents/worktrees/git.js";
 import { gitNullConfigPath } from "../infra/git-exec.js";
-import { currentGitHubPublicationConfig } from "./github-publication-availability.js";
+import { createPublicationCommandRunner } from "./forge-publication-command.js";
 import {
   assertSafeGitPublicationWorkspace,
-  captureSettledGitHubPublicationWorkspaceSnapshot,
-  createGitHubPublicationCommandRunner,
+  captureSettledPublicationWorkspaceSnapshot,
+} from "./forge-publication-workspace.js";
+import { currentGitHubPublicationConfig } from "./github-publication-availability.js";
+import {
   readGitHubPublicationBaseSha,
   requireGitHubPublicationCommit,
 } from "./github-publication-git-transport.js";
@@ -95,7 +97,7 @@ export async function integrateManagedWorkspaceSource(
         ? ["", ...attribution.attribution.trailers]
         : []),
     ].join("\n");
-  const { run } = createGitHubPublicationCommandRunner(assertCurrent);
+  const { run } = createPublicationCommandRunner(assertCurrent);
   await assertSafeGitPublicationWorkspace(owner.worktree.path, run);
   const target = params.source
     ? {
@@ -266,7 +268,7 @@ export async function integrateManagedWorkspaceSource(
             const pristineError =
               "This workspace has existing dirty, untracked, or unpublished work. Keep or finish that work separately before preparing this PR; no PR source was applied.";
             const admittedPaths = await state.canonicalPaths();
-            const snapshot = await captureSettledGitHubPublicationWorkspaceSnapshot(
+            const snapshot = await captureSettledPublicationWorkspaceSnapshot(
               { cwd, assertCurrent: check },
               policy,
               admittedPaths,
@@ -394,7 +396,7 @@ export async function integrateManagedWorkspaceSource(
             if (ancestor.code !== 0 && ancestor.code !== 1) {
               throw new Error("The selected base ancestry could not be verified.");
             }
-            const snapshot = await captureSettledGitHubPublicationWorkspaceSnapshot(
+            const snapshot = await captureSettledPublicationWorkspaceSnapshot(
               { cwd, assertCurrent: check },
               policy,
               await state.canonicalPaths(),
@@ -545,7 +547,7 @@ export async function integrateManagedWorkspaceSource(
               conflictPaths,
             };
           }
-          const snapshot = await captureSettledGitHubPublicationWorkspaceSnapshot(
+          const snapshot = await captureSettledPublicationWorkspaceSnapshot(
             { cwd, assertCurrent: check },
             policy,
             await state.canonicalPaths(),

@@ -3,7 +3,7 @@ import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { root as fsRoot } from "../infra/fs-safe.js";
 import { gitMaintenanceEnvironment } from "../infra/git-maintenance-env.js";
-import { GITHUB_PUBLICATION_CONFIG_GUARD } from "./github-publication-base.js";
+import { PUBLICATION_CONFIG_GUARD } from "./forge-publication-git-config.js";
 import {
   MAX_RECONCILIATION_ENTRIES,
   MAX_RECONCILIATION_FILE_BYTES,
@@ -63,7 +63,7 @@ const relativeOutput = path.relative(path.resolve(cwd), path.resolve(output));
 if (!relativeOutput.startsWith(".." + path.sep) && !path.isAbsolute(relativeOutput)) {
   throw new Error("Publication snapshot output must be outside the workspace");
 }
-${GITHUB_PUBLICATION_CONFIG_GUARD.script}
+${PUBLICATION_CONFIG_GUARD.script}
 if (text(["for-each-ref", "--count=1", "--format=%(refname)", "refs/replace"])) {
   throw new Error("Publication snapshot has unsupported Git replacement metadata");
 }

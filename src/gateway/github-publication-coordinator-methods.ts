@@ -12,6 +12,7 @@ import type {
 } from "../state/github-publication-read.types.js";
 import { readGitHubPublicationSessionLifecycleInWorker } from "../state/github-publication-session-lifecycles.js";
 import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
+import { capturePublicationWorkspaceSnapshot } from "./forge-publication-workspace.js";
 import {
   assertExpectedSharedGitHubPublisher,
   prepareCurrentGitHubPublicationIdentity,
@@ -20,7 +21,6 @@ import {
   prepareGitHubPublicationSession,
 } from "./github-publication-availability.js";
 import { GitHubPublicationRecoveryPendingError } from "./github-publication-git-index.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "./github-publication-git-transport.js";
 import {
   digestGitHubPublicationRequest as digestRequest,
   projectGitHubPublicationResult,
@@ -392,7 +392,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
             sourceIndexTree: existing.source_index_tree,
             workspaceTree: existing.workspace_tree,
           }
-        : await captureGitHubPublicationWorkspaceSnapshot({
+        : await capturePublicationWorkspaceSnapshot({
             cwd: worktree.path,
             assertCurrent: assertCaptureAuthority,
           });

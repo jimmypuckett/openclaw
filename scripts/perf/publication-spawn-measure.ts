@@ -110,10 +110,7 @@ const head = git(["rev-parse", "HEAD"]);
 
 let baselineLoads = 0;
 if (values["transport-owner"]) {
-  const original = new URL(
-    "../../src/gateway/github-publication-git-transport.ts",
-    import.meta.url,
-  );
+  const original = new URL("../../src/gateway/forge-publication-command.ts", import.meta.url);
   const replacement = pathToFileURL(path.resolve(values["transport-owner"]));
   assert.equal(path.dirname(fileURLToPath(original)), path.dirname(fileURLToPath(replacement)));
   assert.notEqual(original.href, replacement.href, "Baseline must be a sibling file");
@@ -128,8 +125,7 @@ if (values["transport-owner"]) {
     },
   });
 }
-const { runPublicationCommand } =
-  await import("../../src/gateway/github-publication-git-transport.js");
+const { runPublicationCommand } = await import("../../src/gateway/forge-publication-command.js");
 const { setDiagnosticsEnabledForProcess } = await import("../../src/infra/diagnostic-events.js");
 setDiagnosticsEnabledForProcess(true);
 assert(!values["transport-owner"] || baselineLoads > 0, "Baseline transport owner was not loaded");

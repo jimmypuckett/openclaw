@@ -3,11 +3,9 @@ import { readNonBlankString } from "@openclaw/normalization-core/string-coerce";
 import { resolveGitHubHost } from "../agents/github-host-runtime.js";
 import type { PreparedGitHubPublicationIdentity } from "../agents/github-tool-identity.js";
 import type { SessionGitHubPullRequestBinding } from "../config/sessions/types.js";
+import { requirePublicationCommand } from "./forge-publication-command.js";
 import { GitHubPublicationKnownFailure } from "./github-publication-failure.js";
-import {
-  githubPublicationApiArgs,
-  requirePublicationCommand,
-} from "./github-publication-git-transport.js";
+import { githubPublicationApiArgs } from "./github-publication-git-transport.js";
 
 type GitHubPublicationPullRequestLookup = {
   pullRequest?: SessionGitHubPullRequestBinding;

@@ -8,18 +8,20 @@ import {
   createOpenClawTestState,
   type OpenClawTestState,
 } from "../test-utils/openclaw-test-state.js";
+import { runPublicationCommand } from "./forge-publication-command.js";
+import { publicationUpdateRefArgs } from "./forge-publication-git.js";
+import {
+  assertSafeGitPublicationWorkspace,
+  capturePublicationWorkspaceSnapshot,
+} from "./forge-publication-workspace.js";
 import {
   assertGitHubPublicationRefCasCompleted,
   recoverGitHubPublicationBranchAndIndex,
   updateGitHubPublicationBranchAndIndex,
 } from "./github-publication-git-index.js";
 import {
-  assertSafeGitPublicationWorkspace,
-  captureGitHubPublicationWorkspaceSnapshot,
   githubPublicationPushArgs,
-  githubPublicationUpdateRefArgs,
   requireGitHubPublicationCommit,
-  runPublicationCommand,
 } from "./github-publication-git-transport.js";
 
 let testState: OpenClawTestState;
@@ -317,7 +319,7 @@ describe("GitHub publication index update", () => {
       f.update({
         env: hookEnv,
         updateRef: async () => {
-          await run(githubPublicationUpdateRefArgs("main", f.headCommit, f.previousHead));
+          await run(publicationUpdateRefArgs("main", f.headCommit, f.previousHead));
           throw new Error("response lost");
         },
       }),
@@ -343,7 +345,7 @@ describe("GitHub publication index update", () => {
     await fs.mkdir(path.dirname(globalAttributes), { recursive: true });
     await fs.writeFile(globalAttributes, "*.secret filter=redact\n");
 
-    await rejects(captureGitHubPublicationWorkspaceSnapshot(f), "unsupported Git clean filter");
+    await rejects(capturePublicationWorkspaceSnapshot(f), "unsupported Git clean filter");
   });
 
   it("settles the accepted branch and index after publication authority ends", async () => {

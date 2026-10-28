@@ -1,10 +1,8 @@
 import { gitMaintenanceEnvironment } from "../infra/git-maintenance-env.js";
 import { NODE_WORKER_WORKSPACE_STDIN_MAX_BYTES } from "../worker/node-workspace-protocol.js";
-import { GITHUB_PUBLICATION_CONFIG_GUARD } from "./github-publication-base.js";
-import {
-  createGitHubPublicationCommandRunner,
-  readGitHubPublicationTree,
-} from "./github-publication-git-transport.js";
+import { createPublicationCommandRunner } from "./forge-publication-command.js";
+import { PUBLICATION_CONFIG_GUARD } from "./forge-publication-git-config.js";
+import { readPublicationTree } from "./forge-publication-workspace.js";
 import { readGitHubRepositoryPublicationMetadata } from "./github-repository-publication-snapshot.js";
 import type { WorkerWorkspaceManifest } from "./worker-environments/workspace-manifest.js";
 
@@ -18,7 +16,7 @@ const env = { ...process.env };
 for (const key of Object.keys(env)) if (/^GIT_/i.test(key)) delete env[key];
 Object.assign(env, { GIT_CONFIG_GLOBAL: gitNullPath, GIT_CONFIG_SYSTEM: gitNullPath,
   ${JSON.stringify(gitMaintenanceEnvironment()).slice(1, -1)}, GIT_ATTR_NOSYSTEM: "1", GIT_NO_REPLACE_OBJECTS: "1" });
-${GITHUB_PUBLICATION_CONFIG_GUARD.script}
+${PUBLICATION_CONFIG_GUARD.script}
 const action = process.argv[1];
 if (action !== "add" && action !== "remove") throw new Error("Invalid publication restore operation");
 const operation = action === "remove" ? ["update-index", "--force-remove", "-z", "--stdin"] :
@@ -62,9 +60,9 @@ export async function prepareRepositoryPublicationRestore(params: {
   let indexed: Set<string> | undefined;
   if (params.indexBase) {
     const { root, commit, assertCurrent } = params.indexBase;
-    const { run } = createGitHubPublicationCommandRunner(assertCurrent);
+    const { run } = createPublicationCommandRunner(assertCurrent);
     const readTree = async (tree: string) => {
-      const raw = await readGitHubPublicationTree(root, tree, run);
+      const raw = await readPublicationTree(root, tree, run);
       const text = raw.toString("utf8");
       if (!Buffer.from(text).equals(raw)) {
         throw new Error("Repository publication paths are not valid UTF-8");

@@ -5,6 +5,21 @@ import { githubRepositoryUrl } from "../agents/github-host.js";
 import { isAbortError } from "../infra/abort-signal.js";
 import { gitNullConfigPath } from "../infra/git-exec.js";
 import type { GitHubPublicationExecutionRow } from "../state/github-publication-read.types.js";
+import {
+  createPublicationCommandRunner,
+  requirePublicationCommand as requireCommand,
+  runPublicationCommand as runCommand,
+} from "./forge-publication-command.js";
+import {
+  assertPublicationBranchRef,
+  publicationUpdateRefArgs,
+  hasPublicationMessageFooter,
+  readPublicationCoauthorTrailers,
+} from "./forge-publication-git.js";
+import {
+  assertSafeGitPublicationWorkspace,
+  capturePublicationWorkspaceSnapshot,
+} from "./forge-publication-workspace.js";
 import { prepareGitHubPublicationContent } from "./github-publication-content.js";
 import {
   createGitHubPublicationExecutionIdentity,
@@ -25,21 +40,12 @@ import {
   updateGitHubPublicationBranchAndIndex,
 } from "./github-publication-git-index.js";
 import {
-  assertSafeGitPublicationWorkspace,
-  assertGitHubPublicationBranchRef,
-  captureGitHubPublicationWorkspaceSnapshot,
-  createGitHubPublicationCommandRunner,
   githubPublicationApiArgs,
   githubPublicationPushArgs,
   githubPublicationRemoteHeadArgs,
-  githubPublicationUpdateRefArgs,
   hasGitHubPublicationWorkflowChanges,
-  hasGitHubPublicationMessageFooter,
-  readGitHubPublicationCoauthorTrailers,
   readGitHubPublicationBaseSha,
   requireGitHubPublicationCommit,
-  requirePublicationCommand as requireCommand,
-  runPublicationCommand as runCommand,
 } from "./github-publication-git-transport.js";
 import {
   findGitHubPublicationPullRequest,
@@ -59,11 +65,7 @@ import { prepareGitHubPublicationWorkflowGuard } from "./github-publication-work
 import { GatewayOperatorAccessUnavailableError } from "./operator-access-policy.js";
 import { SessionMutationAuthorizationChangedError } from "./session-sharing.js";
 
-const PUBLICATION_MARKER = "OpenClaw-Publication";
-
-type PublicationRow = GitHubPublicationExecutionRow;
-
-export async function executeGitHubPublication<Row extends PublicationRow>(params: {
+export async function executeGitHubPublication<Row extends GitHubPublicationExecutionRow>(params: {
   initial: Row;
   recoveryResult?: SessionGitHubPublicationResult;
   identity?: GitHubPublicationIdentityOwner;
@@ -124,7 +126,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
     }
     currentWorktree();
   };
-  const custodyCommands = createGitHubPublicationCommandRunner(assertCustody);
+  const custodyCommands = createPublicationCommandRunner(assertCustody);
   const { assertCurrent: assertAuthority, refreshIdentity } =
     createGitHubPublicationExecutionIdentity({
       row: initial,
@@ -139,7 +141,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
     assertAuthority();
     bound?.assertCurrent();
   };
-  const { step, run, require: command } = createGitHubPublicationCommandRunner(assertCurrent);
+  const { step, run, require: command } = createPublicationCommandRunner(assertCurrent);
   const reconcileObservedPublication = async () => {
     const result = await reconcileGitHubPublication({
       initial: row,
@@ -170,7 +172,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
     let sourceIndexTree = row.source_index_tree;
     let workspaceTree = row.workspace_tree;
     if (!sourceHeadCommit || !sourceIndexTree || !workspaceTree) {
-      const snapshot = await captureGitHubPublicationWorkspaceSnapshot({
+      const snapshot = await capturePublicationWorkspaceSnapshot({
         cwd: worktree.path,
         assertCurrent: assertAuthority,
       });
@@ -184,7 +186,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
       // live workspace inside this execution so a proven mismatch becomes its retained result.
       let snapshot;
       try {
-        snapshot = await captureGitHubPublicationWorkspaceSnapshot({
+        snapshot = await capturePublicationWorkspaceSnapshot({
           cwd: worktree.path,
           assertCurrent: assertAuthority,
         });
@@ -313,7 +315,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
         nextAction: "Make or restore a repository change, then retry.",
       });
     }
-    const marker = `${PUBLICATION_MARKER}: ${row.request_id}`;
+    const marker = `OpenClaw-Publication: ${row.request_id}`;
     const pullRequestMarker = `<!-- openclaw-publication:${row.request_id} -->`;
     const head = await command(
       ["git", "show", "-s", "--no-show-signature", "--format=%H%n%T%n%P%n%B", "HEAD"],
@@ -464,7 +466,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
     if (
       markerPresent &&
       remoteHead !== headCommit &&
-      !hasGitHubPublicationMessageFooter(currentMessage, content.trailers, marker)
+      !hasPublicationMessageFooter(currentMessage, content.trailers, marker)
     ) {
       throw new GitHubPublicationCreditChangedError();
     }
@@ -474,11 +476,11 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
       remoteHead === headCommit &&
       currentTree === workspaceTree &&
       sourceIndexTree === workspaceTree &&
-      messageLines.some((line) => line.startsWith(`${PUBLICATION_MARKER}: `))
+      messageLines.some((line) => line.startsWith("OpenClaw-Publication: "))
     ) {
       // Text in prose or an earlier paragraph is not Git co-author credit.
       // Parse the pinned commit before deciding its attributed tree can be reused.
-      const trailers = await readGitHubPublicationCoauthorTrailers({
+      const trailers = await readPublicationCoauthorTrailers({
         cwd: worktree.path,
         headCommit,
         command,
@@ -518,14 +520,14 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
         },
       );
       assertAuthority();
-      await assertGitHubPublicationBranchRef(
+      await assertPublicationBranchRef(
         worktree.branch,
         async (argv) => (await run(argv, { cwd: worktree.path })).code ?? -1,
       );
       const previousHead = headCommit;
       updateBranchRef = async () => {
         const result = await runCommand(
-          githubPublicationUpdateRefArgs(worktree.branch, commit, previousHead),
+          publicationUpdateRefArgs(worktree.branch, commit, previousHead),
           { cwd: worktree.path, beforeRun: assertCurrent },
         );
         assertGitHubPublicationRefCasCompleted(result);

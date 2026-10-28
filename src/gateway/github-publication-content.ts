@@ -4,9 +4,9 @@ import { resolveControlUiPublicSessionUrl } from "../config/control-ui-link-base
 import { resolveSessionPublicShare } from "../config/sessions/session-public-share.js";
 import type { InternalSessionEntry } from "../config/sessions/types.js";
 import type { GitHubPublicationExecutionRow } from "../state/github-publication-read.types.js";
+import { appendPublicationMessage } from "./forge-publication-git.js";
 import { currentGitHubPublicationConfig } from "./github-publication-availability.js";
 import { GitHubPublicationCreditChangedError } from "./github-publication-failure.js";
-import { appendGitHubPublicationMessage } from "./github-publication-git-transport.js";
 
 export async function prepareGitHubPublicationContent(params: {
   row: Pick<
@@ -60,7 +60,7 @@ export async function prepareGitHubPublicationContent(params: {
   return {
     title,
     trailers,
-    commitMessage: `${appendGitHubPublicationMessage(
+    commitMessage: `${appendPublicationMessage(
       credit ? `${title}\n\nWorked on by:\n${credit}` : title,
       [...trailers, `OpenClaw-Publication: ${row.request_id}`],
     )}\n`,

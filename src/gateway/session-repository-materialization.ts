@@ -18,11 +18,9 @@ import {
 } from "../projects/project-clone-runtime.js";
 import { materializeProjectClone } from "../projects/project-clone.js";
 import { getSessionRepositoryWorkspaceStore } from "../state/session-repository-workspaces.js";
+import { createPublicationCommandRunner } from "./forge-publication-command.js";
+import { assertSafeGitPublicationWorkspace } from "./forge-publication-workspace.js";
 import { parseGitHubPublicationBaseBranch } from "./github-publication-base.js";
-import {
-  assertSafeGitPublicationWorkspace,
-  createGitHubPublicationCommandRunner,
-} from "./github-publication-git-transport.js";
 import { readRepositoryGitHubPublicationBranchAsync } from "./github-publication-store-async.js";
 import { parseGitHubRemoteUrl } from "./github-remote.js";
 import { prepareRepositoryPublicationRestore } from "./github-repository-publication-restore.js";
@@ -172,7 +170,7 @@ async function materializeCapturedRepositoryWorkspace(
     step,
     require: command,
     run,
-  } = createGitHubPublicationCommandRunner(assertCurrent, "session.materialize");
+  } = createPublicationCommandRunner(assertCurrent, "session.materialize");
   const source = { url: repository.url, target: project.repoRoot };
   const remoteHead = await step(() =>
     readProjectCheckoutRemoteHead({ ...source, branch: repository.branch }, cloneOptions),

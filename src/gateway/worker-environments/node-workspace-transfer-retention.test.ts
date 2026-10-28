@@ -13,7 +13,7 @@ import {
 } from "../../media/staged-inputs.js";
 import { createStagedInputOwnershipFixture } from "../../media/staged-inputs.test-support.js";
 import { NodeWorkerWorkspaceRuntime } from "../../node-host/node-worker-workspace.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "../github-publication-git-transport.js";
+import { capturePublicationWorkspaceSnapshot } from "../forge-publication-workspace.js";
 import { createNodeWorkerWorkspaceActions } from "./node-worker-workspace-actions.js";
 import { createNodeWorkerWorkspaceFallback } from "./node-worker-workspace-fallback.js";
 import {
@@ -304,7 +304,7 @@ it.each([
         await localFiles.expect("project.txt", "existing project file\n");
         if (mode !== "plain") {
           await localFiles.missing("unrelated-private.txt");
-          const publication = await captureGitHubPublicationWorkspaceSnapshot({ cwd: localPath });
+          const publication = await capturePublicationWorkspaceSnapshot({ cwd: localPath });
           const published = (
             await requireGit(localPath, ["ls-tree", "-r", "--name-only", publication.workspaceTree])
           ).split("\n");

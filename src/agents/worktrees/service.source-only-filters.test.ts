@@ -291,8 +291,8 @@ it("archives before first execution and restores without running late clean/smud
 });
 
 it("does not execute a clean filter inserted after publication preflight", async () => {
-  const { captureGitHubPublicationWorkspaceSnapshot } =
-    await import("../../gateway/github-publication-git-transport.js");
+  const { capturePublicationWorkspaceSnapshot } =
+    await import("../../gateway/forge-publication-workspace.js");
   const created = await createSourceOnly("publication", "publication");
   await fs.writeFile(path.join(created.path, "README.md"), "changed for publication\n");
   const head = await git(created.path, "rev-parse", "HEAD");
@@ -310,7 +310,7 @@ it("does not execute a clean filter inserted after publication preflight", async
     }
     return await run(...args);
   });
-  await expect(captureGitHubPublicationWorkspaceSnapshot({ cwd: created.path })).rejects.toThrow(
+  await expect(capturePublicationWorkspaceSnapshot({ cwd: created.path })).rejects.toThrow(
     /filter/i,
   );
   expect(injected).toBe(true);

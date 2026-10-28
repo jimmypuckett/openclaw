@@ -18,6 +18,7 @@ import {
   withPersonalForgePublicationWorkspace,
   type PersonalForgePublicationWorkspace,
 } from "./forge-personal-publication-custody.js";
+import { capturePublicationWorkspaceSnapshot } from "./forge-publication-workspace.js";
 import { requestCurrentPersonalGitHubRefresh } from "./github-oauth-lifecycle.js";
 import type { PersonalGitHubAction } from "./github-personal-oauth.js";
 import { presentPersonalGitHubPublicationStatusAsync } from "./github-personal-publication-status.js";
@@ -30,7 +31,6 @@ import {
   rejectGitHubPublicationSelection,
   type GitHubPublicationPreparation,
 } from "./github-publication-failure.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "./github-publication-git-transport.js";
 import { projectGitHubPublicationResult } from "./github-publication-receipt.js";
 import { insertPersonalGitHubPublicationAsync } from "./github-publication-request-async.js";
 import type { GitHubPublicationRequesterV2 } from "./github-publication-requester.js";
@@ -318,7 +318,7 @@ export function createPersonalGitHubPublicationCoordinator(
           workspace.assertCurrent(),
         );
         const target = await prepareGitHubPublicationTarget({ worktree, identity, assertCurrent });
-        const snapshot = await captureGitHubPublicationWorkspaceSnapshot({
+        const snapshot = await capturePublicationWorkspaceSnapshot({
           cwd: worktree.path,
           assertCurrent,
         });

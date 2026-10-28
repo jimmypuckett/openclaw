@@ -5,7 +5,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { GitLabToolIdentityConfig } from "../config/types.tools.js";
-import { updateGitLabToolIdentityConfig } from "../gateway/gitlab-tool-identity-config.js";
+import { updateForgeToolIdentityConfig } from "../gateway/forge-tool-identity-config.js";
 import { gitNullConfigPath } from "../infra/git-exec.js";
 import { normalizeDatabasePath } from "../infra/sqlite-worker-identity.js";
 import { subscribeSecretStoreChanges } from "../secrets/store/secret-store-changes.js";
@@ -556,7 +556,8 @@ export async function retireManagedGitLabProfile(params: {
   if (!selected) {
     return { retired: false };
   }
-  await updateGitLabToolIdentityConfig({
+  await updateForgeToolIdentityConfig({
+    provider: "gitlab",
     scope: params.scope,
     agentId: params.agentId,
     expectedIdentity: selected,

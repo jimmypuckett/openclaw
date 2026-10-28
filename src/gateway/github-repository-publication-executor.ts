@@ -4,6 +4,8 @@ import type { PreparedGitHubPublicationIdentity } from "../agents/github-tool-id
 import type { InternalSessionEntry } from "../config/sessions/types.js";
 import type { SessionRepositoryWorkspaceRecord } from "../state/session-repository-workspaces.types.js";
 import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
+import { requirePublicationCommand, runPublicationCommand } from "./forge-publication-command.js";
+import { hasPublicationMessageFooter } from "./forge-publication-git.js";
 import { parseGitHubPublicationBaseBranch } from "./github-publication-base.js";
 import { prepareGitHubPublicationContent } from "./github-publication-content.js";
 import {
@@ -19,12 +21,7 @@ import {
   resolveGitHubPublicationFailure,
 } from "./github-publication-failure.js";
 import { GitHubPublicationRecoveryPendingError } from "./github-publication-git-index.js";
-import {
-  githubPublicationApiArgs,
-  hasGitHubPublicationMessageFooter,
-  requirePublicationCommand,
-  runPublicationCommand,
-} from "./github-publication-git-transport.js";
+import { githubPublicationApiArgs } from "./github-publication-git-transport.js";
 import { findGitHubPublicationPullRequest } from "./github-publication-pull-requests.js";
 import { projectGitHubPublicationResult } from "./github-publication-receipt.js";
 import type { RepositoryGitHubPublicationExecutionAsync } from "./github-publication-store-async.js";
@@ -359,7 +356,7 @@ export async function executeRepositoryGitHubPublication(params: {
     if (
       headCommit &&
       remoteHead !== headCommit &&
-      !hasGitHubPublicationMessageFooter(
+      !hasPublicationMessageFooter(
         preparedCommitMessage ?? "",
         content.trailers,
         "OpenClaw-Publication: " + row.request_id,

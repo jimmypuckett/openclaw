@@ -11,16 +11,14 @@ import {
 } from "../agents/github-host.js";
 import { getGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import { runPublicationCommand } from "./forge-publication-command.js";
 import {
   currentGitHubPublicationConfig,
   matchesCurrentGitHubPublicationIdentity,
   prepareCurrentGitHubPublicationIdentity,
   prepareGitHubPublicationSession,
 } from "./github-publication-availability.js";
-import {
-  githubPublicationApiArgs,
-  runPublicationCommand,
-} from "./github-publication-git-transport.js";
+import { githubPublicationApiArgs } from "./github-publication-git-transport.js";
 import { captureOwnGitHubPullRequestReader } from "./github-publication-inspect-reader.js";
 import {
   prepareGitHubPublicationRequesterV2,

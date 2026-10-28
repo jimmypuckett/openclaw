@@ -3,6 +3,7 @@ import { resolveGitHubHost } from "../agents/github-host-runtime.js";
 import type { PreparedGitHubPublicationIdentity } from "../agents/github-tool-identity.js";
 import type { SessionGitHubPullRequestBinding } from "../config/sessions/types.js";
 import type { GitHubPublicationExecutionRow } from "../state/github-publication-read.types.js";
+import { requirePublicationCommand, runPublicationCommand } from "./forge-publication-command.js";
 import {
   prepareGitHubPublicationRepositoryIdentity,
   type readGitHubPublicationWorktreeOwner,
@@ -14,10 +15,6 @@ import {
   GitHubPublicationWorkspaceChangedError,
 } from "./github-publication-failure.js";
 import { GitHubPublicationRecoveryPendingError } from "./github-publication-git-index.js";
-import {
-  requirePublicationCommand,
-  runPublicationCommand,
-} from "./github-publication-git-transport.js";
 import { inspectOwnGitHubPullRequest } from "./github-publication-inspect.js";
 import { assertExistingPullRequestWriteAccess } from "./github-publication-pr-preflight.js";
 import type { GitHubPublicationRequesterPolicyV2 } from "./github-publication-requester.js";

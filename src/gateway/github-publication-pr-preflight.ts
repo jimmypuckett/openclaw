@@ -1,10 +1,8 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { SessionGitHubPullRequestInspectResult } from "../../packages/gateway-protocol/src/schema/session-github-publication.js";
 import type { PreparedGitHubPublicationIdentity } from "../agents/github-tool-identity.js";
-import {
-  githubPublicationApiArgs,
-  runPublicationCommand,
-} from "./github-publication-git-transport.js";
+import { runPublicationCommand } from "./forge-publication-command.js";
+import { githubPublicationApiArgs } from "./github-publication-git-transport.js";
 
 type PullRequest = Pick<
   SessionGitHubPullRequestInspectResult,

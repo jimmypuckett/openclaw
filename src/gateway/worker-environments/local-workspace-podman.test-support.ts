@@ -67,8 +67,7 @@ export async function proveRequiredPodmanWorkspace(
   vi.stubEnv("XDG_RUNTIME_DIR", engineRuntime);
   const { ManagedWorktreeService, SNAPSHOT_RETENTION_MS } =
     await import("../../agents/worktrees/service.js");
-  const { captureGitHubPublicationWorkspaceSnapshot } =
-    await import("../github-publication-git-transport.js");
+  const { capturePublicationWorkspaceSnapshot } = await import("../forge-publication-workspace.js");
   const service = new ManagedWorktreeService();
   worktree.repoFingerprint = (await service.resolveRepositoryIdentity(worktree.path)).fingerprint;
   await insertRegistryWorktree(process.env, worktree, { provisionedPaths: [] });
@@ -354,11 +353,11 @@ export async function proveRequiredPodmanWorkspace(
     // The source-only fixture deliberately installed an unsafe host helper.
     // Publication must reject it, then succeed only after the fixture owner removes it.
     await expectRejected(
-      captureGitHubPublicationWorkspaceSnapshot({ cwd: worktree.path }),
+      capturePublicationWorkspaceSnapshot({ cwd: worktree.path }),
       "unsupported Git transport",
     );
     await git(worktree.repoRoot, "config", "--unset-all", "credential.helper");
-    const published = await captureGitHubPublicationWorkspaceSnapshot({
+    const published = await capturePublicationWorkspaceSnapshot({
       cwd: worktree.path,
       assertCurrent: owner.assertCurrent,
     });

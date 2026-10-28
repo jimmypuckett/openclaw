@@ -3,7 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { prepareGitLabPublicationGit } from "./gitlab-publication-git.js";
+import {
+  prepareGitLabPublicationGit,
+  pushGitLabPublicationCommit,
+} from "./gitlab-publication-git.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -98,6 +101,31 @@ it("creates a GitLab provenance commit from the accepted tree without changing t
     expect(commit).toContain("OpenClaw-Publication: request-1");
     expect(git(["rev-parse", "HEAD"])).toBe(baseCommit);
     expect(git(["status", "--porcelain"])).toBe("");
+    const remote = path.join(root, "remote.git");
+    execFileSync("git", ["init", "--bare", "--quiet", remote]);
+    const push = (expectedHead: string | null) =>
+      pushGitLabPublicationCommit({
+        target: {
+          issuer: "https://gitlab.example.test",
+          projectId: 17,
+          projectPath: "group/repo",
+          gitUrl: remote,
+          webUrl: "https://gitlab.example.test/group/repo",
+          baseBranch: "master",
+        },
+        branch: "publication",
+        expectedHead,
+        git: prepared,
+        credentials: { withToken: (run) => run("synthetic-token") },
+        assertCurrent: () => {},
+      });
+    const remoteGit = (...args: string[]) =>
+      execFileSync("git", ["--git-dir", remote, ...args], { encoding: "utf8" }).trim();
+    await push(null);
+    expect(remoteGit("rev-parse", "refs/heads/publication")).toBe(prepared.headCommit);
+    remoteGit("update-ref", "refs/heads/publication", baseCommit);
+    await expect(push(prepared.headCommit)).rejects.toThrow();
+    expect(remoteGit("rev-parse", "refs/heads/publication")).toBe(baseCommit);
   } finally {
     await prepared.close();
   }

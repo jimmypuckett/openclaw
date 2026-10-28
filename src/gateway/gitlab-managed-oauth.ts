@@ -28,8 +28,8 @@ import {
 } from "../agents/gitlab-tool-identity.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { parseGitLabOAuthCallback } from "../shared/gitlab-oauth-callback.js";
+import { updateForgeToolIdentityConfig } from "./forge-tool-identity-config.js";
 import { fingerprintGitLabOAuthConfig } from "./gitlab-oauth-config-fingerprint.js";
-import { updateGitLabToolIdentityConfig } from "./gitlab-tool-identity-config.js";
 import type { PersonalForgeAction } from "./server-methods/personal-forge-authorization.js";
 
 type Target = { scope: "system" | "agent"; agentId: string };
@@ -349,7 +349,8 @@ export function createManagedGitLabOAuthLifecycle(params: {
             assertCurrent: assertOwner,
             commitConfig: async (identity) => {
               operation.committing = true;
-              nextConfig = await updateGitLabToolIdentityConfig({
+              nextConfig = await updateForgeToolIdentityConfig({
+                provider: "gitlab",
                 scope: record.scope,
                 agentId: record.agentId,
                 identity,

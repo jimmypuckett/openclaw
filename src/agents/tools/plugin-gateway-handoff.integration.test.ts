@@ -45,7 +45,7 @@ import { preparePluginToolExecutionCapabilities } from "../plugin-tool-execution
 import type { AgentToolResult } from "../runtime/index.js";
 import { withGatewayToolCallerIdentity } from "./gateway-caller-context.js";
 
-// The resumed event executes through the real session dispatcher; only model execution is fixed.
+// mock-isolation: The resumed event uses the real session dispatcher; only model execution is fixed.
 vi.mock("../embedded-agent-runner/run.js", () => ({ runEmbeddedAgent: vi.fn() }));
 const runEmbeddedAgentMock = vi.mocked(runEmbeddedAgent);
 await Promise.all([
@@ -274,12 +274,14 @@ it.each([false, true])(
                     async () => {
                       // Both invocations share the run abort, but only publish accepts a
                       // Gateway handoff. A pending status call must cancel promptly.
-                      const siblingOutcome = tool.execute("status", { action: "status" }).then(
+                      const pendingStatus = tool.execute("status", { action: "status" }).then(
                         () => ({ kind: "resolved" as const }),
                         (error: unknown) => ({ kind: "rejected" as const, error }),
                       );
-                      const result = await tool.execute("publish", { action: "publish" });
-                      return { result, siblingOutcome: await siblingOutcome };
+                      const publicationResult = await tool.execute("publish", {
+                        action: "publish",
+                      });
+                      return { result: publicationResult, siblingOutcome: await pendingStatus };
                     },
                   );
                   expect(siblingOutcome).toMatchObject({
@@ -311,7 +313,10 @@ it.each([false, true])(
               ),
           );
         } finally {
-          statusPending.resolve({ content: [{ type: "text", text: "late status" }] });
+          statusPending.resolve({
+            content: [{ type: "text", text: "late status" }],
+            details: undefined,
+          });
           cleanup.resolve(undefined);
           operation.complete();
         }

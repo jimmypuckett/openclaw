@@ -30,8 +30,8 @@ import { resolveIncognitoOpenClawAgentSqlitePath } from "../state/openclaw-agent
 import { getSessionRepositoryWorkspaceStore } from "../state/session-repository-workspaces.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { NODE_WORKSPACE_GIT_HISTORY_SCRIPT } from "../worker/node-workspace-transfer-protocol.js";
+import { capturePublicationWorkspaceSnapshot } from "./forge-publication-workspace.js";
 import * as githubOAuthLifecycle from "./github-oauth-lifecycle.js";
-import { captureGitHubPublicationWorkspaceSnapshot } from "./github-publication-git-transport.js";
 import { REMOTE_GITHUB_PUBLICATION_SNAPSHOT_JS } from "./github-repository-publication-snapshot.js";
 import { materializeSessionRepositoryWorkspaceOnGateway } from "./session-repository-materialization.js";
 import * as repositoryGitHubIdentity from "./worker-environments/repository-github-identity.js";
@@ -483,7 +483,7 @@ it.each([
         expect(await git(worktree.path, ["diff", "--cached", "--name-only"])).toBe(
           publicationDigest ? "deleted.txt" : "",
         );
-        const normalized = await captureGitHubPublicationWorkspaceSnapshot({
+        const normalized = await capturePublicationWorkspaceSnapshot({
           cwd: worktree.path,
         });
         const published = (

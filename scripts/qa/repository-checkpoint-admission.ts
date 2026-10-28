@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import {
-  GITHUB_PUBLICATION_CONFIG_GUARD,
-  githubPublicationUnsafeConfigArgs,
-} from "../../src/gateway/github-publication-base.js";
+  PUBLICATION_CONFIG_GUARD,
+  publicationUnsafeConfigArgs,
+} from "../../src/gateway/forge-publication-git-config.js";
 import {
   workspaceResultCheckpointInitArgs,
   workspaceResultGitCommand,
@@ -45,9 +45,9 @@ function admittedDirectory(request: z.infer<typeof requestSchema>): string | und
   const probe =
     cwd === nodeRoot &&
     [
-      GITHUB_PUBLICATION_CONFIG_GUARD.worktreeConfigArgs,
-      githubPublicationUnsafeConfigArgs("--local"),
-      githubPublicationUnsafeConfigArgs("--worktree"),
+      PUBLICATION_CONFIG_GUARD.worktreeConfigArgs,
+      publicationUnsafeConfigArgs("--local"),
+      publicationUnsafeConfigArgs("--worktree"),
     ].some(matches);
   const target = checkpoint ? checkpointRoot : probe ? nodeRoot : undefined;
   if (!target) {

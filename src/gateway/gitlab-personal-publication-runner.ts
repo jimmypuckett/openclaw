@@ -4,17 +4,16 @@ import {
   withPersonalForgePublicationWorkspace,
   type PersonalForgePublicationActionV2,
 } from "./forge-personal-publication-custody.js";
+import { runPublicationCommand, requirePublicationCommand } from "./forge-publication-command.js";
+import {
+  assertSafeGitPublicationWorkspace,
+  capturePublicationWorkspaceSnapshot,
+} from "./forge-publication-workspace.js";
 import {
   assertGitHubPublicationRefCasCompleted,
   recoverGitHubPublicationBranchAndIndex,
   updateGitHubPublicationBranchAndIndex,
 } from "./github-publication-git-index.js";
-import {
-  assertSafeGitPublicationWorkspace,
-  captureGitHubPublicationWorkspaceSnapshot,
-  runPublicationCommand,
-  requirePublicationCommand,
-} from "./github-publication-git-transport.js";
 import { insertPersonalGitLabPublicationAsync } from "./github-publication-request-async.js";
 import {
   claimPersonalGitLabPublicationAsync,
@@ -216,7 +215,7 @@ export async function runPersonalGitLabPublication(
             throw new Error("Accepted GitLab publication target or workspace changed.");
           }
         } else {
-          const captured = await captureGitHubPublicationWorkspaceSnapshot({
+          const captured = await capturePublicationWorkspaceSnapshot({
             cwd: worktree.path,
             assertCurrent,
           });
@@ -459,7 +458,7 @@ export async function runPersonalGitLabPublication(
           ["git", "cat-file", "-e", `${saved.workspaceHead}^{tree}`],
           { cwd: worktree.path, beforeRun: assertCurrent },
         );
-        const captured = await captureGitHubPublicationWorkspaceSnapshot({
+        const captured = await capturePublicationWorkspaceSnapshot({
           cwd: worktree.path,
           assertCurrent,
         });

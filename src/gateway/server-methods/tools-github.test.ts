@@ -27,8 +27,9 @@ vi.mock("../../agents/github-tool-identity.js", () => ({
   resolveManagedGitHubProfileDir: github.profileDir,
   resolveGitHubToolIdentityStatus: github.status,
 }));
-vi.mock("../github-tool-identity-config.js", () => ({
-  updateGitHubToolIdentityConfig: github.updateConfig,
+vi.mock("../forge-tool-identity-config.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../forge-tool-identity-config.js")>()),
+  updateForgeToolIdentityConfig: github.updateConfig,
 }));
 vi.mock("../../secrets/store/secret-store.js", () => ({
   consumeGitHubSetupHandoff: secrets.consumeHandoff,
@@ -138,6 +139,7 @@ describe("tools.github handlers", () => {
     });
 
     expect(github.updateConfig).toHaveBeenCalledWith({
+      provider: "github",
       scope: "system",
       agentId: "reviewer",
       expectedIdentity: null,
@@ -170,6 +172,7 @@ describe("tools.github handlers", () => {
     });
 
     expect(github.updateConfig).toHaveBeenCalledWith({
+      provider: "github",
       scope: "agent",
       agentId: "main",
       identity: {
@@ -206,6 +209,7 @@ describe("tools.github handlers", () => {
     });
 
     expect(github.updateConfig).toHaveBeenCalledWith({
+      provider: "github",
       scope: "system",
       agentId: "main",
       identity: {
@@ -244,6 +248,7 @@ describe("tools.github handlers", () => {
 
     expect(secrets.consumeHandoff).not.toHaveBeenCalled();
     expect(github.updateConfig).toHaveBeenCalledWith({
+      provider: "github",
       scope: "agent",
       agentId: "main",
       expectedIdentity: null,
@@ -262,6 +267,7 @@ describe("tools.github handlers", () => {
     });
 
     expect(github.updateConfig).toHaveBeenCalledWith({
+      provider: "github",
       scope: "system",
       agentId: "main",
       expectedIdentity: { profileId, kind: "oauth" },

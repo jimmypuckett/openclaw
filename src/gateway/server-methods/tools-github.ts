@@ -24,10 +24,10 @@ import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gatew
 import { getActiveSecretsRuntimeConfigSnapshot } from "../../secrets/runtime-state.js";
 import { consumeGitHubSetupHandoff } from "../../secrets/store/secret-store.js";
 import { getAsyncWorkSignal } from "../../shared/async-work-scope.js";
+import { updateForgeToolIdentityConfig } from "../forge-tool-identity-config.js";
 import { GitHubCliUnavailableError } from "../github-cli-preflight.js";
 import { gitHubPublicApi } from "../github-public-api.js";
 import { prepareGitHubReaderIdentity } from "../github-reader-identity.js";
-import { updateGitHubToolIdentityConfig } from "../github-tool-identity-config.js";
 import { resolveAgentIdOrRespondError } from "./agent-id-shared.js";
 import { respondError } from "./response.js";
 import type { GatewayRequestHandler, GatewayRequestHandlers } from "./types.js";
@@ -162,7 +162,8 @@ export const toolsGitHubHandlers: GatewayRequestHandlers = {
         });
         let nextConfig = resolved.cfg;
         if (params.mode === "inherit") {
-          nextConfig = await updateGitHubToolIdentityConfig({
+          nextConfig = await updateForgeToolIdentityConfig({
+            provider: "github",
             scope: params.scope,
             agentId: resolved.agentId,
             expectedIdentity: previousIdentity ?? null,
@@ -199,7 +200,8 @@ export const toolsGitHubHandlers: GatewayRequestHandlers = {
                   email: `${account.accountId}+${account.login}@users.noreply.github.com`,
                 },
               };
-              nextConfig = await updateGitHubToolIdentityConfig({
+              nextConfig = await updateForgeToolIdentityConfig({
+                provider: "github",
                 scope: params.scope,
                 agentId: resolved.agentId,
                 identity,

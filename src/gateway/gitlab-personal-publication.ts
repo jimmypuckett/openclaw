@@ -9,8 +9,8 @@ import { normalizeGitLabIssuer } from "../agents/gitlab-host.js";
 import { resolveEffectiveGitLabToolIdentity } from "../agents/gitlab-tool-identity.js";
 import { readUserGitLabConnectionAsync } from "../state/user-gitlab-connections.js";
 import type { PersonalForgePublicationActionV2 } from "./forge-personal-publication-custody.js";
+import { requirePublicationCommand } from "./forge-publication-command.js";
 import { readGitHubPublicationWorktreeOwner } from "./github-publication-availability.js";
-import { requirePublicationCommand } from "./github-publication-git-transport.js";
 import { readPersonalGitLabPublicationAsync } from "./github-publication-store-async.js";
 import {
   publicationPublisher,
