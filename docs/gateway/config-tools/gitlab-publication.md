@@ -54,11 +54,37 @@ the selected connection before starting another authorization.
 
 ## Publish from a session
 
-The session must have a locally managed publication worktree and a canonical
+The bundled `gitlab_publish` tool publishes as the requesting person's connected
+**My GitLab** account. It never selects System GitLab, an agent override or another
+participant's connection. A publication call yields the current turn, runs under
+the host's retained requester authority, and resumes the same conversation with
+the result. A started handoff is not a completed merge request.
+
+For a clean local checkout not yet owned by the conversation, pass `workspacePath`.
+The native workspace owner creates an isolated managed worktree and preserves the
+original files. Existing managed sessions use their current worktree. Publication
+currently requires a local managed workspace; cloud repository workspaces are not
+supported by the GitLab publication transport.
+
+The resulting worktree must have a canonical
 HTTPS `origin` on the configured issuer, ending in `.git`. The repository must
 resolve to the exact canonical project using the selected account's access. The
 repository remote selects the provider; changing a branch does not change the
 provider or destination project.
+
+Use `baseBranch` for the repository workflow's selected target (for example,
+`develop`); omitting it uses the GitLab project's default branch. The selected
+remote parent must be an ancestor of the accepted local source. Local task commits
+and workspace edits are published as one commit with the connected user's verified
+credit, preserving the remote publishing branch's history. A moved remote branch
+requires reconciliation rather than force-pushing.
+
+For an explicitly requested initial empty draft MR, use `bootstrapDraft: true`
+and `draft: true`. This permits one empty commit only on a new remote publishing
+branch with an unchanged remote base tree. Ordinary no-change publication remains
+an error. Use `status` with the returned `requestId` after uncertainty. If recovery
+requires confirmation, send `requestId` and the exact `requestDigest`, `generation`
+and `account` from its `confirmation`; do not create a replacement request.
 
 Publication records the selected publisher, creates the Git commit with that
 account's verified GitLab commit identity, and checks the remote branch SHA. An

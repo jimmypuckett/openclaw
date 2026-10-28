@@ -94,10 +94,12 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
   description: string;
   draft: boolean;
   bootstrapDraft?: boolean;
+  parentCommit?: string;
   fetchImpl?: typeof fetch;
 }): Promise<Receipt> {
   const { execution, snapshot, target, identity } = params;
   const row = execution.row;
+  const parentCommit = params.parentCommit ?? row.previousHeadCommit ?? row.sourceHeadCommit;
   const assertAction = () => {
     params.assertCurrent();
     if (!execution.ownsExecution()) {
@@ -113,7 +115,8 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
       snapshot.workspaceTree !== row.workspaceTree ||
       !oid.test(row.sourceHeadCommit) ||
       (row.previousHeadCommit !== null && !oid.test(row.previousHeadCommit)) ||
-      (row.previousHeadCommit !== null && row.previousHeadCommit !== row.sourceHeadCommit) ||
+      !oid.test(parentCommit) ||
+      (row.previousHeadCommit !== null && row.previousHeadCommit !== parentCommit) ||
       identity.issuer !== target.issuer ||
       (params.bootstrapDraft &&
         (!params.draft ||
@@ -148,9 +151,9 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
     }
     const sourceCommit = await api.request({
       method: "GET",
-      path: `projects/${target.projectId}/repository/commits/${row.sourceHeadCommit}`,
+      path: `projects/${target.projectId}/repository/commits/${parentCommit}`,
     });
-    if (!isRecord(sourceCommit) || sourceCommit.id !== row.sourceHeadCommit) {
+    if (!isRecord(sourceCommit) || sourceCommit.id !== parentCommit) {
       throw new Error("GitLab publication source commit is unavailable.");
     }
     const date = new Date(row.createdAtMs).toISOString();
@@ -159,7 +162,7 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
     const git = await prepareGitLabPublicationGit({
       repositoryRoot: params.repositoryRoot,
       snapshot,
-      parentCommit: row.previousHeadCommit ?? row.sourceHeadCommit,
+      parentCommit,
       message,
       author: { name: identity.name, email: identity.commitEmail, date },
       target,
@@ -232,9 +235,17 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
           );
         }
       }
-      const comparisonTree = row.previousHeadCommit
-        ? await git.run(["rev-parse", `${row.previousHeadCommit}^{tree}`])
-        : snapshot.baseTree;
+      const comparisonTree =
+        params.parentCommit || row.previousHeadCommit
+          ? await git.run(["rev-parse", `${parentCommit}^{tree}`])
+          : snapshot.baseTree;
+      if (params.bootstrapDraft && comparisonTree !== snapshot.workspaceTree) {
+        throw new GitLabPublicationKnownFailure(
+          "An empty GitLab bootstrap publication requires an unchanged remote base tree.",
+          "workspace_changed",
+          "Review the accepted source and remote base before publishing.",
+        );
+      }
       if (comparisonTree === snapshot.workspaceTree && !params.bootstrapDraft) {
         throw new GitLabPublicationKnownFailure(
           "GitLab publication has no changes.",

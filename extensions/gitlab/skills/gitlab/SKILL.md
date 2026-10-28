@@ -1,6 +1,6 @@
 ---
 name: gitlab
-description: Read or manage GitLab issues, issue comments, and merge-request discussions as the signed-in requesting user through the gitlab_issues tool.
+description: Publish repository changes or manage GitLab issues, comments and discussions as the signed-in requesting user through native GitLab tools.
 ---
 
 # GitLab issues and comments
@@ -37,7 +37,24 @@ needed in Profile and stop that action. Never ask for an OAuth token.
    reconcile author/content before retrying. Never blindly repeat a create,
    comment or reply, and never switch credentials to recover a failure.
 
-Repository publication has its own reviewed connection and publication flow.
+## Repository publication
+
+Use `gitlab_publish` when the user requests repository publication. It uses the
+same requesting person's connected **My GitLab** account, with no shared fallback.
+For an unbound clean local checkout, supply `workspacePath`; native workspace
+adoption preserves the original source and gives this conversation its own worktree.
+Supply the repository workflow's selected `baseBranch`, such as `develop`, rather
+than assuming the project default is the intended target.
+
+An initial empty draft MR requires explicit `bootstrapDraft: true` and `draft: true`.
+Use it only when requested, before implementation, on an unchanged tree with no
+existing remote publishing branch. Ordinary publication still rejects no changes.
+Publishing hands off the turn and resumes this same conversation with its result.
+Do not report a started or accepted request as a completed MR. Preserve `requestId`,
+publisher and exact commit SHA; use `status` after an uncertain result and `confirm`
+only with its exact returned recovery fields. Never repeat a push or MR creation
+blindly, manufacture a replacement MR, or recover with a different identity.
+
 Operations outside this tool's schema do not authorize falling back to a shared
 identity. Explicitly requested System/agent CLI administration is a separate
 workflow; it must never be described as acting as the requesting person.

@@ -301,12 +301,13 @@ function preparePersonalGitHubAction(options: Request, signal?: AbortSignal): Pe
   };
 }
 
-export async function bindPersonalForgeSessionAction(
+export async function bindPersonalForgeSessionAction<Action extends PersonalGitHubAction>(
   options: Request,
-  action: PersonalGitHubAction,
+  action: Action,
   target: SessionMutationTarget,
   method = "sessions.github.publish",
   label = "GitHub",
+  scope: "operator.write" | "operator.sessions.read" | "operator.sessions.write" = "operator.write",
 ) {
   const prepared = await prepareGitHubPublicationSession(target.sessionKey, {
     agentId: target.agentId,
@@ -328,7 +329,7 @@ export async function bindPersonalForgeSessionAction(
       throw new Error(`${label} publication session was not found.`);
     }
     const { authorization, error } = await resolveSessionMutationAuthorizationAsync({
-      client: currentGitHubClient(options, "operator.write", action.owner, label),
+      client: currentGitHubClient(options, scope, action.owner, label),
       method,
       requestParams: { sessionKey: initial.canonicalKey, agentId: initial.agentId },
       context: options.context,
@@ -340,7 +341,7 @@ export async function bindPersonalForgeSessionAction(
     }
     const assertCurrent = () => {
       action.assertCurrent();
-      currentGitHubClient(options, "operator.write", action.owner, label);
+      currentGitHubClient(options, scope, action.owner, label);
       const current = prepared.readCurrent();
       if (current.entry?.archivedAt !== undefined) {
         throw new GitHubPublicationSessionChangedError();
@@ -380,7 +381,26 @@ async function preparePersonalForgeSessionActionV2(
     provider === "GitHub"
       ? await preparePersonalGitHubActionV2(options, "operator.write")
       : await preparePersonalForgeAction(options, "operator.write", undefined, "GitLab");
-  const bound = await bindPersonalForgeSessionAction(options, personal, target, method, provider);
+  return retainPersonalForgePublicationSession(options, personal, target, provider, method);
+}
+
+/** Both direct UI actions and admitted tool handoffs use the native source owner. */
+export async function retainPersonalForgePublicationSession(
+  options: Request & Parameters<typeof prepareGitHubPublicationRequesterV2>[0],
+  personal: PersonalForgeAction,
+  target: SessionMutationTarget,
+  provider: "GitHub" | "GitLab",
+  method: string,
+  scope: "operator.write" | "operator.sessions.write" = "operator.write",
+) {
+  const bound = await bindPersonalForgeSessionAction(
+    options,
+    personal,
+    target,
+    method,
+    provider,
+    scope,
+  );
   const { action } = bound;
   try {
     const admitted = await prepareGitHubPublicationRequesterV2(options, action);

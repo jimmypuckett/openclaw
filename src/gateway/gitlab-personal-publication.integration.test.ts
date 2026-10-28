@@ -120,6 +120,8 @@ it.each([
   "bootstrap-existing-branch",
   "bootstrap-must-draft",
   "bootstrap-nonempty",
+  "selected-base",
+  "local-commits",
   "project-allowlist-omitted",
   "project-denied",
   "project-policy-revoked",
@@ -146,6 +148,10 @@ it.each([
         await fs.writeFile(path.join(cwd, "artifact.txt"), "accepted\n");
         git(cwd, "add", "artifact.txt");
       }
+      if (fault === "local-commits") {
+        git(cwd, "commit", "-m", "Unpublished task work");
+      }
+      const localHead = git(cwd, "rev-parse", "HEAD");
       const sessionId = randomUUID();
       const sessionKey = `agent:main:${sessionId}`;
       state.worktree = {
@@ -269,10 +275,16 @@ it.each([
             return Response.json(project);
           }
           if (endpoint === "projects/group%2Frepo") {
-            return Response.json({ id: 17 });
+            return Response.json(project);
           }
-          if (endpoint === "projects/17/repository/branches/master") {
-            return Response.json({ name: "master", commit: { id: source } });
+          if (
+            endpoint === "projects/17/repository/branches/master" ||
+            endpoint === "projects/17/repository/branches/develop"
+          ) {
+            return Response.json({
+              name: endpoint.endsWith("/develop") ? "develop" : "master",
+              commit: { id: source },
+            });
           }
           if (endpoint === "projects/17/repository/branches/topic") {
             return state.remoteHead
@@ -290,7 +302,9 @@ it.each([
             const body = JSON.parse(typeof init.body === "string" ? init.body : "") as {
               description: string;
               title: string;
+              target_branch: string;
             };
+            expect(body.target_branch).toBe(fault === "selected-base" ? "develop" : "master");
             if (fault.startsWith("bootstrap-")) {
               expect(body.title).toBe("Draft: Publish accepted change");
             }
@@ -301,7 +315,7 @@ it.each([
               source_project_id: 17,
               target_project_id: 17,
               source_branch: "topic",
-              target_branch: "master",
+              target_branch: body.target_branch,
               sha: state.remoteHead,
               author: { id: 42 },
               description: body.description,
@@ -368,6 +382,7 @@ it.each([
         title: "Publish accepted change",
         draft: fault === "bootstrap-must-draft" ? false : fault.startsWith("bootstrap-"),
         bootstrapDraft: fault.startsWith("bootstrap-"),
+        baseBranch: fault === "selected-base" ? "develop" : undefined,
       };
       if (
         fault === "bootstrap-must-draft" ||
@@ -491,7 +506,7 @@ it.each([
         ).rejects.toThrow("different accepted GitLab publication");
       }
       const finalHead = first!.head_commit!;
-      expect(saved.sourceHead).toBe(source);
+      expect(saved.sourceHead).toBe(localHead);
       expect(finalHead).toMatch(/^[a-f0-9]{40}$/u);
       expect(finalHead).not.toBe(source);
       expect(git(cwd, "rev-parse", "HEAD")).toBe(finalHead);

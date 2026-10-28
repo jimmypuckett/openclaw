@@ -26,6 +26,8 @@ const CORE_GATEWAY_HANDLER_MODULES = {
   audit: () => import("./audit.js").then((module) => module.auditHandlers),
   "tools-gitlab": () => import("./tools-gitlab.js").then((module) => module.toolsGitLabHandlers),
   "gitlab-issues": () => import("./gitlab-issues.js").then((module) => module.gitLabIssueHandlers),
+  "gitlab-publication-tool": () =>
+    import("./gitlab-publication-tool.js").then((module) => module.gitLabPublicationToolHandlers),
   gitlab: () => import("./gitlab.js").then((module) => module.gitLabHandlers),
   users: () => import("./users.js").then((module) => module.usersHandlers),
   "users-mentionable": () =>

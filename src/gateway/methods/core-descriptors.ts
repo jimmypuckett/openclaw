@@ -736,4 +736,33 @@ export const CORE_GATEWAY_METHOD_SPECS = [
     "2026.10",
     { ...UNADVERTISED, ...PROFILE_DEPENDENT },
   ],
+  [
+    "tools.gitlab.publication.publish",
+    "gitlab-publication-tool",
+    "operator.sessions.write",
+    "2026.10",
+    {
+      ...UNADVERTISED,
+      ...PROFILE_DEPENDENT,
+      handoff: { pluginId: "gitlab", toolName: "gitlab_publish" },
+    },
+  ],
+  [
+    "tools.gitlab.publication.confirm",
+    "gitlab-publication-tool",
+    "operator.sessions.write",
+    "2026.10",
+    {
+      ...UNADVERTISED,
+      ...PROFILE_DEPENDENT,
+      handoff: { pluginId: "gitlab", toolName: "gitlab_publish" },
+    },
+  ],
+  [
+    "tools.gitlab.publication.status",
+    "gitlab-publication-tool",
+    "operator.sessions.read",
+    "2026.10",
+    { ...UNADVERTISED, ...PROFILE_DEPENDENT },
+  ],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];

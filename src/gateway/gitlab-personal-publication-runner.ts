@@ -54,6 +54,7 @@ export type AcceptedGitLabPublicationInput = {
   description?: string;
   draft?: boolean;
   bootstrapDraft?: boolean;
+  baseBranch?: string;
 };
 export { gitLabPublicationReceiptSchema };
 /** Reuse the native session/worktree reservation and accepted checkpoint, with GitLab as transport. */
@@ -113,7 +114,8 @@ export async function runPersonalGitLabPublication(
       accepted.title !== input.title ||
       accepted.description !== input.description ||
       accepted.draft !== input.draft ||
-      (accepted.bootstrapDraft ?? false) !== input.bootstrapDraft
+      (accepted.bootstrapDraft ?? false) !== input.bootstrapDraft ||
+      (input.baseBranch !== undefined && accepted.target.baseBranch !== input.baseBranch)
     ) {
       throw new Error("GitLab request belongs to a different account or accepted action.");
     }
@@ -186,8 +188,15 @@ export async function runPersonalGitLabPublication(
           projectPath: project.path_with_namespace,
           gitUrl: project.http_url_to_repo,
           webUrl: project.web_url,
-          baseBranch: project.default_branch,
+          baseBranch: input.baseBranch ?? project.default_branch,
         };
+        await requirePublicationCommand(
+          ["git", "check-ref-format", `refs/heads/${target.baseBranch}`],
+          {
+            cwd: worktree.path,
+            beforeRun: assertCurrent,
+          },
+        );
         const remote = await requirePublicationCommand(["git", "remote", "get-url", "origin"], {
           cwd: worktree.path,
           beforeRun: assertCurrent,
@@ -239,6 +248,43 @@ export async function runPersonalGitLabPublication(
               "An empty GitLab bootstrap publication requires an unpublished branch.",
             );
           }
+          const publicationParentCommit =
+            previousHeadCommit ??
+            z
+              .object({
+                name: z.literal(target.baseBranch),
+                commit: z.object({ id: oid }),
+              })
+              .parse(
+                await api.request({
+                  method: "GET",
+                  path: `projects/${target.projectId}/repository/branches/${encodeURIComponent(target.baseBranch)}`,
+                }),
+              ).commit.id;
+          // Local task commits may be unpublished. Preserve the remote history and
+          // publish their accepted tree under the connected user's verified credit.
+          await requirePublicationCommand(
+            [
+              "git",
+              "merge-base",
+              "--is-ancestor",
+              publicationParentCommit,
+              captured.sourceHeadCommit,
+            ],
+            { cwd: worktree.path, beforeRun: assertCurrent },
+          );
+          if (
+            input.bootstrapDraft &&
+            captured.workspaceTree !==
+              (await requirePublicationCommand(
+                ["git", "rev-parse", `${publicationParentCommit}^{tree}`],
+                { cwd: worktree.path, beforeRun: assertCurrent },
+              ))
+          ) {
+            throw new Error(
+              "An empty GitLab bootstrap publication requires an unchanged remote base tree.",
+            );
+          }
           saved = {
             target,
             sessionIdentity: {
@@ -264,6 +310,7 @@ export async function runPersonalGitLabPublication(
             branch: worktree.branch,
             createdAtMs: Date.now(),
             previousHeadCommit,
+            publicationParentCommit,
           };
           const pending = createPersonalGitLabPublicationRow({
             action,
@@ -526,6 +573,7 @@ export async function runPersonalGitLabPublication(
           description: saved.description,
           draft: saved.draft,
           bootstrapDraft: saved.bootstrapDraft ?? false,
+          parentCommit: saved.publicationParentCommit,
         });
       } catch (error) {
         if (native && row?.status === "publishing") {

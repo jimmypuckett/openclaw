@@ -59,6 +59,7 @@ export const gitLabPublicationReceiptSchema = z.object({
   branch: z.string(),
   createdAtMs: z.number(),
   previousHeadCommit: oid.nullable(),
+  publicationParentCommit: oid.optional(),
 });
 export type AcceptedGitLabPublication = z.infer<typeof gitLabPublicationReceiptSchema>;
 

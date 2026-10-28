@@ -28,7 +28,10 @@ import {
 } from "./gitlab-personal-publication-row.js";
 import { runPersonalGitLabPublication } from "./gitlab-personal-publication-runner.js";
 import type { PersonalGitLabPublicationRow } from "./gitlab-personal-publication-store.js";
-import { createGitLabPublicationApi } from "./gitlab-publication-adapter.js";
+import {
+  assertGitLabPublicationProject,
+  createGitLabPublicationApi,
+} from "./gitlab-publication-adapter.js";
 import type { PersonalForgeAction } from "./server-methods/personal-forge-authorization.js";
 import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
 
@@ -64,17 +67,15 @@ function requestIdFor(action: GitLabPublicationReadAction, issuer: string, key: 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-async function targetFor(options: Options, action: GitLabPublicationReadAction) {
+export async function readPersonalGitLabCheckoutTarget(
+  options: Options,
+  action: PersonalForgeAction,
+  cwd: string,
+) {
   const issuer = issuerFor(options);
-  using owner = await readGitHubPublicationWorktreeOwner(action);
-  const { worktree } = owner;
-  const assertCurrent = () => {
-    action.assertCurrent();
-    owner.assertCurrent();
-  };
   const origin = await requirePublicationCommand(["git", "remote", "get-url", "origin"], {
-    cwd: worktree.path,
-    beforeRun: assertCurrent,
+    cwd,
+    beforeRun: action.assertCurrent,
   });
   if (!origin.startsWith(`${issuer}/`) || !origin.endsWith(".git")) {
     throw new Error("The session does not have a canonical GitLab HTTPS origin.");
@@ -83,8 +84,75 @@ async function targetFor(options: Options, action: GitLabPublicationReadAction) 
   if (!/^[\w.-]+(?:\/[\w.-]+)+$/u.test(repository)) {
     throw new Error("The session GitLab repository path is invalid.");
   }
-  assertCurrent();
-  return { repository, branch: worktree.branch, issuer, gitUrl: origin };
+  action.assertCurrent();
+  return { repository, issuer, gitUrl: origin };
+}
+
+async function targetFor(options: Options, action: GitLabPublicationReadAction) {
+  using owner = await readGitHubPublicationWorktreeOwner(action);
+  const target = await readPersonalGitLabCheckoutTarget(
+    options,
+    {
+      ...action,
+      assertCurrent() {
+        action.assertCurrent();
+        owner.assertCurrent();
+      },
+    },
+    owner.worktree.path,
+  );
+  return { ...target, branch: owner.worktree.branch };
+}
+
+/** Provider admission precedes binding a local checkout as well as any remote write. */
+export async function preparePersonalGitLabPublicationProject(
+  options: Options,
+  action: PersonalForgeAction,
+  credential: GitLabPublicationCredential,
+  target: Awaited<ReturnType<typeof readPersonalGitLabCheckoutTarget>>,
+) {
+  if (target.issuer !== credential.account.issuer) {
+    throw new Error("The selected GitLab publisher belongs to another issuer.");
+  }
+  const api = createGitLabPublicationApi({
+    target: {
+      issuer: target.issuer,
+      projectId: 1,
+      projectPath: target.repository,
+      gitUrl: target.gitUrl,
+      webUrl: `${target.issuer}/${target.repository}`,
+      baseBranch: "",
+    },
+    credentials: credential,
+    assertCurrent() {
+      action.assertCurrent();
+      credential.assertCurrent();
+    },
+  });
+  const value = await api.request({
+    method: "GET",
+    path: `projects/${encodeURIComponent(target.repository)}`,
+  });
+  const project = z.object({ id: z.number().int().positive() }).parse(value);
+  assertGitLabPublicationProject(value, {
+    issuer: target.issuer,
+    projectId: project.id,
+    projectPath: target.repository,
+    gitUrl: target.gitUrl,
+    webUrl: `${target.issuer}/${target.repository}`,
+    baseBranch: "",
+  });
+  action.assertCurrent();
+  credential.assertCurrent();
+  assertPersonalGitLabPublicationProjectAllowed(options, project.id);
+  return project;
+}
+
+export function assertPersonalGitLabPublicationProjectAllowed(options: Options, projectId: number) {
+  const configured = options.context.getRuntimeConfig().gateway?.gitlab;
+  if (!configured || (configured.projects && !configured.projects.includes(projectId))) {
+    throw new Error("GitLab publication project is not allowed.");
+  }
 }
 
 function assertReceiptSession(
@@ -340,7 +408,8 @@ export async function requestPersonalGitLabPublication(
       saved.title !== (params.title ?? `Publish ${saved.branch}`) ||
       saved.description !== (params.body ?? "") ||
       saved.draft !== (params.draft ?? true) ||
-      (saved.bootstrapDraft ?? false) !== (params.bootstrapDraft ?? false)
+      (saved.bootstrapDraft ?? false) !== (params.bootstrapDraft ?? false) ||
+      (params.baseBranch !== undefined && saved.target.baseBranch !== params.baseBranch)
     ) {
       throw new Error("The idempotency key belongs to a different accepted GitLab publication.");
     }
@@ -366,29 +435,11 @@ export async function requestPersonalGitLabPublication(
     );
   }
   const target = await targetFor(options, action);
-  if (target.issuer !== credential.account.issuer) {
-    throw new Error("The selected GitLab publisher belongs to another issuer.");
-  }
-  const api = createGitLabPublicationApi({
-    target: {
-      issuer: target.issuer,
-      projectId: 1,
-      projectPath: target.repository,
-      gitUrl: target.gitUrl,
-      webUrl: `${target.issuer}/${target.repository}`,
-      baseBranch: "",
-    },
-    credentials: credential,
-    assertCurrent: () => {
-      action.assertCurrent();
-      credential.assertCurrent();
-    },
-  });
-  const project = z.object({ id: z.number().int().positive() }).parse(
-    await api.request({
-      method: "GET",
-      path: `projects/${encodeURIComponent(target.repository)}`,
-    }),
+  const project = await preparePersonalGitLabPublicationProject(
+    options,
+    action,
+    credential,
+    target,
   );
   await runPersonalGitLabPublication(options, action, credential, {
     requestId,
@@ -398,6 +449,7 @@ export async function requestPersonalGitLabPublication(
     description: params.body,
     draft: params.draft,
     bootstrapDraft: params.bootstrapDraft,
+    baseBranch: params.baseBranch,
   });
   return (await readPersonalGitLabPublicationStatus(options, action, credential, requestId)).result;
 }
@@ -436,6 +488,7 @@ export async function confirmPersonalGitLabPublication(
     description: saved.description,
     draft: saved.draft,
     bootstrapDraft: saved.bootstrapDraft,
+    baseBranch: saved.target.baseBranch,
   });
   return (await readPersonalGitLabPublicationStatus(options, action, credential, row.request_id))
     .result;

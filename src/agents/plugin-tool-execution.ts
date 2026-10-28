@@ -233,7 +233,7 @@ export function preparePluginToolExecutionCapabilities(params: {
                     ),
                 );
               },
-              formatResult: (result) => JSON.stringify(result),
+              formatResult: (handoffResult) => JSON.stringify(handoffResult),
             });
             return markAcceptedPluginToolHandoffResult(result);
           },

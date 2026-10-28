@@ -44,6 +44,8 @@ reserved `0.0.0` artifacts. Test it with the Gateway version you deploy; the roo
 - `@openclaw/gateway-protocol/gitlab-issues` exports the closed GitLab issue and
   discussion operation schema, parser, and read/write classifier shared by the
   Gateway and GitLab plugin.
+- `@openclaw/gateway-protocol/gitlab-publication` exports the closed requester-bound
+  publication operation and tool request schemas shared by the Gateway and plugin.
 - `@openclaw/gateway-protocol/frame-guards` exports dependency-free structural
   guards for gateway event and response envelopes.
 - `@openclaw/gateway-protocol/client-info` exports client ID, mode, and capability
