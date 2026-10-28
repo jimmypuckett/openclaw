@@ -10,7 +10,10 @@ import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { resolveExternalPackageRuntimeEntrypointUrl } from "../infra/runtime-process-url.js";
 import { createPluginRequesterModels } from "../plugins/requester-models.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
-import { markAcceptedPluginToolHandoffResult } from "../plugins/tool-handoff-result.js";
+import {
+  acceptCurrentPluginGatewayHandoffInvocation,
+  markAcceptedPluginToolHandoffResult,
+} from "../plugins/tool-handoff-result.js";
 import type { OpenClawPluginToolContext } from "../plugins/tool-types.js";
 import { runOutsideCommandProcessScope } from "../process/exec-spawn.js";
 import { runCommandWithTimeout } from "../process/exec.js";
@@ -178,7 +181,10 @@ export function preparePluginToolExecutionCapabilities(params: {
                 runId: params.runId,
                 sessionId: handoffSessionId,
               }),
-              onYield: params.onYield,
+              onYield: (message) => {
+                acceptCurrentPluginGatewayHandoffInvocation();
+                return params.onYield!(message);
+              },
               signal: request.signal,
               senderIsOwner: params.senderIsOwner,
               fenceSuccessors: true,

@@ -57,6 +57,7 @@ export function consumeAcceptedPluginGatewayHandoffClaim(
   }
   state.consumed = true;
   claim.assertCurrent();
+  claim.operatorAuthority.assertCurrent();
   dispatchedAuthority.assertCurrent();
   return claim;
 }

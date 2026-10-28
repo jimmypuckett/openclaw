@@ -56,6 +56,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/agents/tools/sessions-send-communication.test.ts",
   "src/agents/tools/plugins-reload-handoff.test.ts",
   "src/agents/tools/github-publish-tool.handoff.test.ts",
+  "src/agents/tools/plugin-gateway-handoff.integration.test.ts",
   "src/agents/tools/message-tool.current-prompt-reaction.test.ts",
   "src/agents/tools/message-tool.hosted-transport.test.ts",
   "src/agents/tools/message-tool-retry-delivery.test.ts",

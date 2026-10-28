@@ -42,6 +42,7 @@ import { SESSIONS_YIELD_ABORT_REASON } from "../embedded-agent-runner/run/attemp
 import { runEmbeddedAgent } from "../embedded-agent.js";
 import { createOperationalRunInstanceRef } from "../operational-run-instance.js";
 import { preparePluginToolExecutionCapabilities } from "../plugin-tool-execution.js";
+import type { AgentToolResult } from "../runtime/index.js";
 import { withGatewayToolCallerIdentity } from "./gateway-caller-context.js";
 
 // The resumed event executes through the real session dispatcher; only model execution is fixed.
@@ -82,6 +83,7 @@ it.each([false, true])(
               },
             },
           },
+          plugins: { enabled: false },
           skills: { load: { watch: false } },
         };
         setRuntimeConfigSnapshot(config);
@@ -117,6 +119,7 @@ it.each([false, true])(
         const runAbort = new AbortController();
         const cleanup = createDeferredCore();
         const resumed = createDeferredCore<string>();
+        const statusPending = createDeferredCore<AgentToolResult<unknown>>();
         const observed: Array<{ profileId: string; pluginId: string | undefined }> = [];
         const allowed: string[] = [];
         const handler: GatewayRequestHandler = (options) => {
@@ -125,7 +128,12 @@ it.each([false, true])(
             toolName: "gitlab_publish",
           });
           claim.assertCurrent();
-          expect(options.client?.internal?.operatorRunAuthority).toBe(claim.operatorAuthority);
+          expect(options.client?.internal?.operatorRunAuthority?.source).toBe(
+            claim.operatorAuthority.source,
+          );
+          expect(options.client?.internal?.operatorRunAuthority?.profileId).toBe(
+            claim.operatorAuthority.profileId,
+          );
           observed.push({
             profileId: claim.operatorAuthority.profileId,
             pluginId: options.client?.internal?.pluginRuntimeOwnerId,
@@ -163,9 +171,17 @@ it.each([false, true])(
               name: "gitlab_publish",
               label: "GitLab publish",
               description: "Publish the current task",
-              parameters: { type: "object", properties: {} },
-              execute: () =>
-                factoryContext.gatewayHandoff!({ method, params: { sessionKey, title: "Draft" } }),
+              parameters: {
+                type: "object",
+                properties: { action: { type: "string" } },
+              },
+              execute: (_toolCallId, input) =>
+                (input as { action?: string }).action === "status"
+                  ? statusPending.promise
+                  : factoryContext.gatewayHandoff!({
+                      method,
+                      params: { sessionKey, title: "Draft" },
+                    }),
             }),
           },
           { name: "gitlab_publish", gatewayHandoffMethods: [method] },
@@ -241,7 +257,7 @@ it.each([false, true])(
                     ),
                     runAbort.signal,
                   );
-                  const result = await withGatewayToolCallerIdentity(
+                  const { result, siblingOutcome } = await withGatewayToolCallerIdentity(
                     {
                       ...session,
                       operatorAuthority,
@@ -255,8 +271,21 @@ it.each([false, true])(
                         }
                       },
                     },
-                    () => tool.execute("publish", {}),
+                    async () => {
+                      // Both invocations share the run abort, but only publish accepts a
+                      // Gateway handoff. A pending status call must cancel promptly.
+                      const siblingOutcome = tool.execute("status", { action: "status" }).then(
+                        () => ({ kind: "resolved" as const }),
+                        (error: unknown) => ({ kind: "rejected" as const, error }),
+                      );
+                      const result = await tool.execute("publish", { action: "publish" });
+                      return { result, siblingOutcome: await siblingOutcome };
+                    },
                   );
+                  expect(siblingOutcome).toMatchObject({
+                    kind: "rejected",
+                    error: expect.objectContaining({ name: "AbortError" }),
+                  });
                   expect(result.details).toMatchObject({ status: "started", yielded: true });
                   expect(allowed).toEqual(["gitlab_publish", "gitlab_publish"]);
                   expect(observed).toHaveLength(0);
@@ -282,6 +311,7 @@ it.each([false, true])(
               ),
           );
         } finally {
+          statusPending.resolve({ content: [{ type: "text", text: "late status" }] });
           cleanup.resolve(undefined);
           operation.complete();
         }
