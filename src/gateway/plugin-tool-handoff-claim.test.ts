@@ -9,10 +9,25 @@ import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
 
 function fixture() {
   let current = true;
+  let dispatchedCurrent = true;
+  const source = {};
   const operatorAuthority = {
+    profileId: "alice",
+    source,
+    scopes: ["operator.read", "operator.write"],
     assertCurrent() {
       if (!current) {
         throw new Error("operator source revoked");
+      }
+    },
+  } as AdmittedRunOperatorAuthority;
+  const dispatchedAuthority = {
+    profileId: "alice",
+    source,
+    scopes: ["operator.sessions.write"],
+    assertCurrent() {
+      if (!dispatchedCurrent) {
+        throw new Error("dispatched authority revoked");
       }
     },
   } as AdmittedRunOperatorAuthority;
@@ -33,9 +48,14 @@ function fixture() {
   const options = {
     req: { method },
     params: { ...params },
-    client: { internal: { syntheticClient: true, operatorRunAuthority: operatorAuthority } },
+    client: { internal: { syntheticClient: true, operatorRunAuthority: dispatchedAuthority } },
   } as unknown as GatewayRequestHandlerOptions;
-  return { claim, options, revoke: () => (current = false) };
+  return {
+    claim,
+    options,
+    revoke: () => (current = false),
+    revokeDispatched: () => (dispatchedCurrent = false),
+  };
 }
 
 describe("accepted plugin Gateway handoff claim", () => {
@@ -87,6 +107,42 @@ describe("accepted plugin Gateway handoff claim", () => {
           expected,
         ),
       ).toThrow();
+      expect(() =>
+        consumeAcceptedPluginGatewayHandoffClaim(
+          {
+            ...options,
+            client: {
+              ...options.client!,
+              internal: {
+                ...options.client!.internal,
+                operatorRunAuthority: {
+                  ...options.client!.internal!.operatorRunAuthority!,
+                  source: {},
+                },
+              },
+            },
+          } as GatewayRequestHandlerOptions,
+          expected,
+        ),
+      ).toThrow();
+      expect(() =>
+        consumeAcceptedPluginGatewayHandoffClaim(
+          {
+            ...options,
+            client: {
+              ...options.client!,
+              internal: {
+                ...options.client!.internal,
+                operatorRunAuthority: {
+                  ...options.client!.internal!.operatorRunAuthority!,
+                  profileId: "bob",
+                },
+              },
+            },
+          } as GatewayRequestHandlerOptions,
+          expected,
+        ),
+      ).toThrow();
       expect(consumeAcceptedPluginGatewayHandoffClaim(options, expected)).toBe(claim);
     });
   });
@@ -97,6 +153,16 @@ describe("accepted plugin Gateway handoff claim", () => {
       revoke();
       expect(() => consumeAcceptedPluginGatewayHandoffClaim(options, expected)).toThrow(
         "operator source revoked",
+      );
+    });
+  });
+
+  it("rejects a revoked projected dispatch authority", () => {
+    const { claim, options, revokeDispatched } = fixture();
+    withAcceptedPluginGatewayHandoffClaim(claim, () => {
+      revokeDispatched();
+      expect(() => consumeAcceptedPluginGatewayHandoffClaim(options, expected)).toThrow(
+        "dispatched authority revoked",
       );
     });
   });

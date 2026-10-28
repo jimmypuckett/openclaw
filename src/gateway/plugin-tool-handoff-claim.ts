@@ -38,6 +38,7 @@ export function consumeAcceptedPluginGatewayHandoffClaim(
 ): AcceptedPluginGatewayHandoffClaim {
   const state = claims.getStore();
   const claim = state?.claim;
+  const dispatchedAuthority = options.client?.internal?.operatorRunAuthority;
   if (
     !state ||
     state.consumed ||
@@ -46,12 +47,16 @@ export function consumeAcceptedPluginGatewayHandoffClaim(
     claim.toolName !== expected.toolName ||
     claim.method !== options.req.method ||
     !isDeepStrictEqual(claim.params, options.params) ||
-    options.client?.internal?.operatorRunAuthority !== claim.operatorAuthority ||
+    !dispatchedAuthority ||
+    !claim.operatorAuthority.source ||
+    dispatchedAuthority.source !== claim.operatorAuthority.source ||
+    dispatchedAuthority.profileId !== claim.operatorAuthority.profileId ||
     options.client?.internal?.syntheticClient !== true
   ) {
     throw new Error("This Gateway request has no accepted plugin tool handoff.");
   }
   state.consumed = true;
   claim.assertCurrent();
+  dispatchedAuthority.assertCurrent();
   return claim;
 }
