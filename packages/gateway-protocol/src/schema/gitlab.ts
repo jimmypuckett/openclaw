@@ -97,6 +97,7 @@ export const SessionGitLabPublishParamsSchema = closedObject({
   ),
   body: Type.Optional(Type.String({ minLength: 1, maxLength: 8192 })),
   draft: Type.Optional(Type.Boolean()),
+  bootstrapDraft: Type.Optional(Type.Boolean()),
   selection: Type.Optional(GitLabPublicationSelectionSchema),
 });
 export const SessionGitLabOptionsParamsSchema = closedObject({

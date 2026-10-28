@@ -93,6 +93,7 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
   title: string;
   description: string;
   draft: boolean;
+  bootstrapDraft?: boolean;
   fetchImpl?: typeof fetch;
 }): Promise<Receipt> {
   const { execution, snapshot, target, identity } = params;
@@ -114,6 +115,10 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
       (row.previousHeadCommit !== null && !oid.test(row.previousHeadCommit)) ||
       (row.previousHeadCommit !== null && row.previousHeadCommit !== row.sourceHeadCommit) ||
       identity.issuer !== target.issuer ||
+      (params.bootstrapDraft &&
+        (!params.draft ||
+          row.previousHeadCommit !== null ||
+          snapshot.workspaceTree !== snapshot.baseTree)) ||
       /^\s*\/[a-z][a-z_]*(?:\s|$)/mu.test(params.description) ||
       !params.title.trim()
     ) {
@@ -230,7 +235,7 @@ export async function executeRepositoryGitLabPublication<Receipt>(params: {
       const comparisonTree = row.previousHeadCommit
         ? await git.run(["rev-parse", `${row.previousHeadCommit}^{tree}`])
         : snapshot.baseTree;
-      if (comparisonTree === snapshot.workspaceTree) {
+      if (comparisonTree === snapshot.workspaceTree && !params.bootstrapDraft) {
         throw new GitLabPublicationKnownFailure(
           "GitLab publication has no changes.",
           "no_changes",

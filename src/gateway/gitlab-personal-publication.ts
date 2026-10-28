@@ -339,7 +339,8 @@ export async function requestPersonalGitLabPublication(
       existing.connection_generation !== credential.generation ||
       saved.title !== (params.title ?? `Publish ${saved.branch}`) ||
       saved.description !== (params.body ?? "") ||
-      saved.draft !== (params.draft ?? true)
+      saved.draft !== (params.draft ?? true) ||
+      (saved.bootstrapDraft ?? false) !== (params.bootstrapDraft ?? false)
     ) {
       throw new Error("The idempotency key belongs to a different accepted GitLab publication.");
     }
@@ -396,6 +397,7 @@ export async function requestPersonalGitLabPublication(
     title: params.title ?? `Publish ${target.branch}`,
     description: params.body,
     draft: params.draft,
+    bootstrapDraft: params.bootstrapDraft,
   });
   return (await readPersonalGitLabPublicationStatus(options, action, credential, requestId)).result;
 }
@@ -433,6 +435,7 @@ export async function confirmPersonalGitLabPublication(
     title: saved.title,
     description: saved.description,
     draft: saved.draft,
+    bootstrapDraft: saved.bootstrapDraft,
   });
   return (await readPersonalGitLabPublicationStatus(options, action, credential, row.request_id))
     .result;

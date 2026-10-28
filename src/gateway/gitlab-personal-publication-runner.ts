@@ -53,6 +53,7 @@ export type AcceptedGitLabPublicationInput = {
   title: string;
   description?: string;
   draft?: boolean;
+  bootstrapDraft?: boolean;
 };
 export { gitLabPublicationReceiptSchema };
 /** Reuse the native session/worktree reservation and accepted checkpoint, with GitLab as transport. */
@@ -66,7 +67,11 @@ export async function runPersonalGitLabPublication(
     ...rawInput,
     description: rawInput.description ?? "",
     draft: rawInput.draft ?? true,
+    bootstrapDraft: rawInput.bootstrapDraft ?? false,
   };
+  if (input.bootstrapDraft && !input.draft) {
+    throw new Error("An empty GitLab bootstrap publication must be a draft merge request.");
+  }
   const config = options.context.getRuntimeConfig().gateway?.gitlab;
   if (!config || (config.projects && !config.projects.includes(input.projectId))) {
     throw new Error("GitLab publication project is not allowed.");
@@ -107,7 +112,8 @@ export async function runPersonalGitLabPublication(
       accepted.target.projectId !== input.projectId ||
       accepted.title !== input.title ||
       accepted.description !== input.description ||
-      accepted.draft !== input.draft
+      accepted.draft !== input.draft ||
+      (accepted.bootstrapDraft ?? false) !== input.bootstrapDraft
     ) {
       throw new Error("GitLab request belongs to a different account or accepted action.");
     }
@@ -211,6 +217,9 @@ export async function runPersonalGitLabPublication(
               { cwd: worktree.path, beforeRun: assertCurrent },
             ),
           );
+          if (input.bootstrapDraft && captured.workspaceTree !== baseTree) {
+            throw new Error("An empty GitLab bootstrap publication requires an unchanged tree.");
+          }
           let previousHeadCommit: string | null = null;
           try {
             const branch = z.object({ commit: z.object({ id: oid }) }).parse(
@@ -224,6 +233,11 @@ export async function runPersonalGitLabPublication(
             if (!(error instanceof Error) || !error.message.endsWith("HTTP 404.")) {
               throw error;
             }
+          }
+          if (input.bootstrapDraft && previousHeadCommit !== null) {
+            throw new Error(
+              "An empty GitLab bootstrap publication requires an unpublished branch.",
+            );
           }
           saved = {
             target,
@@ -242,6 +256,7 @@ export async function runPersonalGitLabPublication(
             title: input.title,
             description: input.description ?? "",
             draft: input.draft ?? true,
+            bootstrapDraft: input.bootstrapDraft,
             sourceHead: captured.sourceHeadCommit,
             baseTree,
             workspaceHead: captured.workspaceTree,
@@ -510,6 +525,7 @@ export async function runPersonalGitLabPublication(
           title: saved.title,
           description: saved.description,
           draft: saved.draft,
+          bootstrapDraft: saved.bootstrapDraft ?? false,
         });
       } catch (error) {
         if (native && row?.status === "publishing") {

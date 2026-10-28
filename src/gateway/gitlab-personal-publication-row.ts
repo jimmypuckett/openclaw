@@ -51,6 +51,7 @@ export const gitLabPublicationReceiptSchema = z.object({
   title: z.string(),
   description: z.string(),
   draft: z.boolean(),
+  bootstrapDraft: z.boolean().optional(),
   sourceHead: oid,
   baseTree: oid,
   workspaceHead: oid,
@@ -65,6 +66,10 @@ export function readAcceptedGitLabPublication(row: PersonalGitLabPublicationRow)
   const saved = gitLabPublicationReceiptSchema.parse(JSON.parse(row.receipt_json));
   const publisher = publicationPublisher(saved.publisher);
   if (
+    (saved.bootstrapDraft &&
+      (!saved.draft ||
+        saved.previousHeadCommit !== null ||
+        saved.workspaceHead !== saved.baseTree)) ||
     row.request_digest !== personalGitLabRequestDigest(row) ||
     row.issuer !== saved.target.issuer ||
     row.identity_account_id !== saved.actor.accountId ||

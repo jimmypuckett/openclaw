@@ -30,6 +30,7 @@ const state = vi.hoisted(() => ({
   remoteHead: null as null | string,
   pushes: 0,
   failFirstPush: false,
+  applyBeforePushFailure: false,
 }));
 vi.mock("./github-publication-availability.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./github-publication-availability.js")>()),
@@ -50,6 +51,9 @@ vi.mock("./gitlab-publication-git.js", async (original) => ({
   pushGitLabPublicationCommit: async ({ git: preparedGit }: { git: { headCommit: string } }) => {
     state.pushes++;
     if (state.failFirstPush && state.pushes === 1) {
+      if (state.applyBeforePushFailure) {
+        state.remoteHead = preparedGit.headCommit;
+      }
       throw new Error("Synthetic push response lost");
     }
     state.remoteHead = preparedGit.headCommit;
@@ -111,6 +115,11 @@ it.each([
   "foreign-url-after-loss",
   "missing-source",
   "no-changes",
+  "bootstrap-draft",
+  "bootstrap-applied-push-loss",
+  "bootstrap-existing-branch",
+  "bootstrap-must-draft",
+  "bootstrap-nonempty",
   "project-allowlist-omitted",
   "project-denied",
   "project-policy-revoked",
@@ -130,7 +139,10 @@ it.each([
       const source = git(cwd, "rev-parse", "HEAD");
       git(cwd, "checkout", "-b", "topic");
       git(cwd, "remote", "add", "origin", project.http_url_to_repo);
-      if (fault !== "no-changes") {
+      if (
+        fault !== "no-changes" &&
+        (!fault.startsWith("bootstrap-") || fault === "bootstrap-nonempty")
+      ) {
         await fs.writeFile(path.join(cwd, "artifact.txt"), "accepted\n");
         git(cwd, "add", "artifact.txt");
       }
@@ -162,9 +174,10 @@ it.each([
       );
       expect(entry).toBeDefined();
       state.entry = { sessionId, lifecycleRevision: entry?.lifecycleRevision ?? null };
-      state.remoteHead = null;
+      state.remoteHead = fault === "bootstrap-existing-branch" ? source : null;
       state.pushes = 0;
-      state.failFirstPush = fault === "lost-first-push";
+      state.failFirstPush = fault === "lost-first-push" || fault === "bootstrap-applied-push-loss";
+      state.applyBeforePushFailure = fault === "bootstrap-applied-push-loss";
       const owner = ensureProfileForEmail(`gitlab-${fault}@example.test`).id;
       const publicationAccount =
         fault === "shared-native" || fault === "shared-agent-native"
@@ -276,7 +289,11 @@ it.each([
             posts++;
             const body = JSON.parse(typeof init.body === "string" ? init.body : "") as {
               description: string;
+              title: string;
             };
+            if (fault.startsWith("bootstrap-")) {
+              expect(body.title).toBe("Draft: Publish accepted change");
+            }
             mrs.push({
               iid: 9,
               web_url: `${project.web_url}/-/merge_requests/9`,
@@ -349,8 +366,34 @@ it.each([
         sessionKey: action.sessionKey,
         idempotencyKey: requestId,
         title: "Publish accepted change",
-        draft: false,
+        draft: fault === "bootstrap-must-draft" ? false : fault.startsWith("bootstrap-"),
+        bootstrapDraft: fault.startsWith("bootstrap-"),
       };
+      if (
+        fault === "bootstrap-must-draft" ||
+        fault === "bootstrap-existing-branch" ||
+        fault === "bootstrap-nonempty"
+      ) {
+        await expect(
+          requestPersonalGitLabPublication(options as never, action as never, credential, input),
+        ).rejects.toThrow(
+          fault === "bootstrap-must-draft"
+            ? "must be a draft"
+            : fault === "bootstrap-existing-branch"
+              ? "requires an unpublished branch"
+              : "requires an unchanged tree",
+        );
+        expect(
+          await readPersonalGitLabPublicationAsync(owner, issuer, {
+            sessionKey: action.sessionKey,
+            agentId: action.agentId,
+          }),
+        ).toBeUndefined();
+        expect(git(cwd, "rev-parse", "HEAD")).toBe(source);
+        expect(state.pushes).toBe(0);
+        expect(posts).toBe(0);
+        return;
+      }
       if (fault === "project-denied") {
         await expect(
           requestPersonalGitLabPublication(options as never, action as never, credential, input),
@@ -433,6 +476,20 @@ it.each([
         expect(keyB.pendingPersonal).toBeNull();
       }
       const saved = readAcceptedGitLabPublication(first!);
+      if (fault.startsWith("bootstrap-")) {
+        expect(saved).toMatchObject({
+          bootstrapDraft: true,
+          draft: true,
+          previousHeadCommit: null,
+        });
+        expect(saved.workspaceHead).toBe(saved.baseTree);
+        await expect(
+          requestPersonalGitLabPublication(options as never, action as never, credential, {
+            ...input,
+            bootstrapDraft: false,
+          }),
+        ).rejects.toThrow("different accepted GitLab publication");
+      }
       const finalHead = first!.head_commit!;
       expect(saved.sourceHead).toBe(source);
       expect(finalHead).toMatch(/^[a-f0-9]{40}$/u);
@@ -444,6 +501,35 @@ it.each([
       expect(git(cwd, "show", "-s", "--format=%an <%ae> (%cn <%ce>)", finalHead)).toBe(
         `${publicationAccount.name} <${publicationAccount.commitEmail}> (${publicationAccount.name} <${publicationAccount.commitEmail}>)`,
       );
+      if (fault === "bootstrap-applied-push-loss") {
+        expect(posts).toBe(0);
+        expect(state.pushes).toBe(1);
+        expect(state.remoteHead).toBe(finalHead);
+        const status = await readPersonalGitLabPublicationStatus(
+          options as never,
+          action as never,
+          credential,
+          acceptedRequestId,
+        );
+        expect(status.confirmation).not.toBeNull();
+        expect(
+          await confirmPersonalGitLabPublication(options as never, action as never, credential, {
+            requestId: acceptedRequestId,
+            ...status.confirmation!,
+          } as never),
+        ).toMatchObject({ status: "needs_confirmation" });
+        expect(posts).toBe(1);
+        expect(state.pushes).toBe(1);
+        expect(
+          await confirmPersonalGitLabPublication(options as never, action as never, credential, {
+            requestId: acceptedRequestId,
+            ...status.confirmation!,
+          } as never),
+        ).toMatchObject({ status: "published", headCommit: finalHead });
+        expect(posts).toBe(1);
+        expect(state.pushes).toBe(1);
+        return;
+      }
       if (fault === "shared-native" || fault === "shared-agent-native") {
         expect(saved.publisher).toEqual(publisher);
         expect(first?.connection_generation).toBe(generation);
