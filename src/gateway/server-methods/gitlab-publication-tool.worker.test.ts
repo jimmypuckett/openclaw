@@ -29,6 +29,8 @@ import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { loadBundledPluginFacade } from "../../test-utils/bundled-plugin-public-surface.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
+import { prepareGitHubPublicationSession } from "../github-publication-availability.js";
+import { readPersonalGitLabPublicationAsync } from "../github-publication-store-async.js";
 import { createPersonalGitLabOAuthLifecycle } from "../gitlab-personal-oauth.js";
 import {
   personalGitLabRequestDigest,
@@ -412,9 +414,11 @@ it("keeps registered publication status private to its signed-in owner after OAu
   });
 });
 
-it.each([false, true])(
-  "publishes an empty draft through the admitted personal RPC and recovers a lost MR response (%s)",
-  async (lostMrResponse) => {
+it.each(["normal", "lost-mr-response", "canonical-mismatch", "revoked"] as const)(
+  "keeps requester publication authority through native RPC (%s)",
+  async (scenario) => {
+    const lostMrResponse = scenario === "lost-mr-response";
+    const unbound = scenario === "canonical-mismatch";
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gitlab-rpc-publication-"));
       const cwd = path.join(repoRoot, "topic");
@@ -478,7 +482,7 @@ it.each([false, true])(
         const bobProfile = ensureProfileForEmail("rpc-bob@example.test").id;
         const alice = createOperatorClient({
           profileId: aliceProfile,
-          scopes: ["operator.read", "operator.write"],
+          scopes: ["operator.read", "operator.write", ...(unbound ? ["operator.admin"] : [])],
         });
         alice.internal = { ...alice.internal, operatorAccessAuthority: null };
         const bob = createOperatorClient({
@@ -489,26 +493,28 @@ it.each([false, true])(
         const sessionId = randomUUID();
         const sessionKey = `agent:main:dashboard:${randomUUID()}`;
         const worktreeId = randomUUID();
-        await insertRegistryWorktree(process.env, {
-          id: worktreeId,
-          path: cwd,
-          repoRoot,
-          repoFingerprint: `rpc-${sessionId}`,
-          branch: "topic",
-          name: "topic",
-          baseRef: "origin/master",
-          ownerKind: "session",
-          ownerId: sessionKey,
-          createdAt: 1_000,
-          lastActiveAt: 1_000,
-        });
+        if (!unbound) {
+          await insertRegistryWorktree(process.env, {
+            id: worktreeId,
+            path: cwd,
+            repoRoot,
+            repoFingerprint: `rpc-${sessionId}`,
+            branch: "topic",
+            name: "topic",
+            baseRef: "origin/master",
+            ownerKind: "session",
+            ownerId: sessionKey,
+            createdAt: 1_000,
+            lastActiveAt: 1_000,
+          });
+        }
         await upsertSessionEntryCore(
           { agentId: "main", sessionKey },
           {
             sessionId,
             updatedAt: Date.now(),
             createdActor: { type: "human", source: "profile", id: aliceProfile },
-            worktree: { id: worktreeId, repoRoot, branch: "topic" },
+            ...(unbound ? {} : { worktree: { id: worktreeId, repoRoot, branch: "topic" } }),
           },
         );
         const handler = expectDefined(
@@ -612,7 +618,11 @@ it.each([false, true])(
           expect(actor).toBe(11);
           const endpoint = url.pathname.replace("/api/v4/", "");
           if (endpoint === "projects/group%2Frepo" || endpoint === "projects/17") {
-            return Response.json(project);
+            return Response.json(
+              unbound && endpoint === "projects/group%2Frepo"
+                ? { ...project, web_url: "https://different.example.test/group/repo" }
+                : project,
+            );
           }
           if (endpoint === "projects/17/repository/branches/master") {
             return Response.json({ name: "master", commit: { id: source } });
@@ -689,6 +699,7 @@ it.each([false, true])(
           title: "Draft: Initial work",
           draft: true,
           bootstrapDraft: true,
+          ...(unbound ? { workspacePath: cwd } : {}),
         };
         const params = { sessionKey, agentId: "main", idempotencyKey: randomUUID(), operation };
         const claim = {
@@ -744,6 +755,42 @@ it.each([false, true])(
               ),
           );
         try {
+          if (scenario === "revoked") {
+            await service.disconnect(
+              await preparePersonalForgeAction(
+                { client: alice, context },
+                "operator.read",
+                undefined,
+                "GitLab",
+              ),
+            );
+            await expect(withAcceptedPluginGatewayHandoffClaim(claim, dispatch)).rejects.toThrow();
+            expect(publicationTransport.pushes).toBe(0);
+            expect(mrs).toHaveLength(0);
+            expect(
+              await readPersonalGitLabPublicationAsync(aliceProfile, issuer, {
+                sessionKey,
+                agentId: "main",
+              }),
+            ).toBeUndefined();
+            return;
+          }
+          if (unbound) {
+            await expect(withAcceptedPluginGatewayHandoffClaim(claim, dispatch)).rejects.toThrow(
+              "GitLab publication project identity changed",
+            );
+            using selected = await prepareGitHubPublicationSession(sessionKey, { agentId: "main" });
+            expect(selected.readCurrent().entry?.worktree).toBeUndefined();
+            expect(publicationTransport.pushes).toBe(0);
+            expect(mrs).toHaveLength(0);
+            expect(
+              await readPersonalGitLabPublicationAsync(aliceProfile, issuer, {
+                sessionKey,
+                agentId: "main",
+              }),
+            ).toBeUndefined();
+            return;
+          }
           let result = await withAcceptedPluginGatewayHandoffClaim(claim, dispatch);
           if (lostMrResponse) {
             expect(result).toMatchObject({ status: "needs_confirmation" });
