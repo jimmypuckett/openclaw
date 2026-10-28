@@ -414,11 +414,11 @@ it("keeps registered publication status private to its signed-in owner after OAu
   });
 });
 
-it.each(["normal", "lost-mr-response", "canonical-mismatch", "revoked"] as const)(
+it.each(["normal", "lost-mr-response", "canonical-mismatch", "policy-revoked", "revoked"] as const)(
   "keeps requester publication authority through native RPC (%s)",
   async (scenario) => {
     const lostMrResponse = scenario === "lost-mr-response";
-    const unbound = scenario === "canonical-mismatch";
+    const unbound = scenario === "canonical-mismatch" || scenario === "policy-revoked";
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "gitlab-rpc-publication-"));
       const cwd = path.join(repoRoot, "topic");
@@ -463,6 +463,20 @@ it.each(["normal", "lost-mr-response", "canonical-mismatch", "revoked"] as const
           },
         },
       };
+      let projectMetadataFetched = false;
+      let projectPolicyReadsAfterMetadata = 0;
+      if (scenario === "policy-revoked") {
+        Object.defineProperty(config.gateway!.gitlab!, "projects", {
+          enumerable: true,
+          get() {
+            if (!projectMetadataFetched) {
+              return [17];
+            }
+            projectPolicyReadsAfterMetadata++;
+            return projectPolicyReadsAfterMetadata <= 2 ? [17] : [99];
+          },
+        });
+      }
       setRuntimeConfigSnapshot(config);
       const catalog = await prepareUserProfileCatalog();
       const service = createPersonalGitLabOAuthLifecycle(() => config);
@@ -553,6 +567,7 @@ it.each(["normal", "lost-mr-response", "canonical-mismatch", "revoked"] as const
           () => config,
         );
         context.gitlabOAuthService = service;
+        context.getSessionEventSubscriberConnIds = () => new Set();
         context.getClientConnIds = (filter) =>
           new Set(
             [alice, bob]
@@ -618,8 +633,11 @@ it.each(["normal", "lost-mr-response", "canonical-mismatch", "revoked"] as const
           expect(actor).toBe(11);
           const endpoint = url.pathname.replace("/api/v4/", "");
           if (endpoint === "projects/group%2Frepo" || endpoint === "projects/17") {
+            if (endpoint === "projects/group%2Frepo") {
+              projectMetadataFetched = true;
+            }
             return Response.json(
-              unbound && endpoint === "projects/group%2Frepo"
+              scenario === "canonical-mismatch" && endpoint === "projects/group%2Frepo"
                 ? { ...project, web_url: "https://different.example.test/group/repo" }
                 : project,
             );
@@ -777,10 +795,15 @@ it.each(["normal", "lost-mr-response", "canonical-mismatch", "revoked"] as const
           }
           if (unbound) {
             await expect(withAcceptedPluginGatewayHandoffClaim(claim, dispatch)).rejects.toThrow(
-              "GitLab publication project identity changed",
+              scenario === "canonical-mismatch"
+                ? "GitLab publication project identity changed"
+                : "GitLab publication project is not allowed",
             );
             using selected = await prepareGitHubPublicationSession(sessionKey, { agentId: "main" });
             expect(selected.readCurrent().entry?.worktree).toBeUndefined();
+            if (scenario === "policy-revoked") {
+              expect(projectPolicyReadsAfterMetadata).toBeGreaterThanOrEqual(3);
+            }
             expect(publicationTransport.pushes).toBe(0);
             expect(mrs).toHaveLength(0);
             expect(
