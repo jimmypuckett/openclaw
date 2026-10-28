@@ -9,6 +9,7 @@ import { withAcceptedPluginGatewayHandoffClaim } from "../gateway/plugin-tool-ha
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { resolveExternalPackageRuntimeEntrypointUrl } from "../infra/runtime-process-url.js";
 import { createPluginRequesterModels } from "../plugins/requester-models.js";
+import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { markAcceptedPluginToolHandoffResult } from "../plugins/tool-handoff-result.js";
 import type { OpenClawPluginToolContext } from "../plugins/tool-types.js";
 import { runOutsideCommandProcessScope } from "../process/exec-spawn.js";
@@ -156,7 +157,8 @@ export function preparePluginToolExecutionCapabilities(params: {
             const { resolveReplyRunForCurrentSessionId } =
               await import("../sessions/session-controller.identity.js");
             const { handoffSessionTool } = await import("./tools/session-tool-handoff.js");
-            const { callAgentToolGatewayRequest } = await import("./tools/in-process-gateway.js");
+            const { dispatchGatewayMethodInProcess } =
+              await import("../gateway/server-plugin-in-process-dispatch.js");
             assertInvocationCurrent();
             caller.assertToolAllowed(handoff.toolName);
             const current = params.runId
@@ -184,6 +186,11 @@ export function preparePluginToolExecutionCapabilities(params: {
                 if (!operatorAuthority) {
                   throw new Error("Gateway handoff lost its admitted operator source.");
                 }
+                const resolveGatewayContext =
+                  getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+                if (!resolveGatewayContext) {
+                  throw new Error("Gateway handoff lost its admitted Gateway.");
+                }
                 const assertAcceptedCurrent = () => {
                   assertCurrent();
                   assertSourceCurrent();
@@ -205,14 +212,19 @@ export function preparePluginToolExecutionCapabilities(params: {
                     assertCurrent: assertAcceptedCurrent,
                   },
                   () =>
-                    callAgentToolGatewayRequest({
-                      method: acceptedMethod,
-                      params: acceptedParams,
-                      scopes: [scope],
-                      signal,
-                      timeoutMs: null,
-                      sessionMutationCommitGuard: assertAcceptedCurrent,
-                    }),
+                    dispatchGatewayMethodInProcess<Record<string, unknown>>(
+                      acceptedMethod,
+                      acceptedParams,
+                      {
+                        forceSyntheticClient: true,
+                        pluginRuntimeOwnerId: handoff.pluginId,
+                        resolveGatewayContext,
+                        syntheticScopes: [scope],
+                        syntheticScopeMode: "exact",
+                        signal,
+                        sessionMutationCommitGuard: assertAcceptedCurrent,
+                      },
+                    ),
                 );
               },
               formatResult: (result) => JSON.stringify(result),
