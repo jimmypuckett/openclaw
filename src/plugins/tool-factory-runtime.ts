@@ -12,6 +12,7 @@ import { resolveMemoryCapabilityRegistration } from "./memory-state.js";
 import { capturePluginLifecycleAuthority } from "./registry-lifecycle.js";
 import type { PluginRegistry, PluginToolRegistration } from "./registry-types.js";
 import { withPluginRuntimePluginScope } from "./runtime/gateway-request-scope.js";
+import { isAcceptedPluginToolHandoffResult } from "./tool-handoff-result.js";
 import { copyPluginToolMeta } from "./tool-metadata.js";
 import type { OpenClawPluginToolContext } from "./types.js";
 
@@ -59,7 +60,9 @@ export function bindPluginToolCallbacks(
     const result = run();
     if (assertInvocationCurrent && isPromiseLike(result)) {
       return Promise.resolve(result).then((value) => {
-        assertInvocationCurrent();
+        if (!isAcceptedPluginToolHandoffResult(value)) {
+          assertInvocationCurrent();
+        }
         return value;
       }) as T; // SAFETY: Only promise-like callback results enter this branch; the resolved value is unchanged.
     }

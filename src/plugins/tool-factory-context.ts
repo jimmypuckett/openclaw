@@ -25,6 +25,12 @@ export function createPluginToolFactoryContext(params: {
   bindExecutionCapabilities?: (
     assertCurrent: () => void,
     signal?: AbortSignal,
+    handoff?: {
+      pluginId: string;
+      toolName: string;
+      methods: readonly string[];
+      assertPluginCurrent(): void;
+    },
   ) => PluginToolExecutionCapabilities;
 }): OpenClawPluginToolContext {
   const { entry, registry, context } = params;
@@ -59,6 +65,18 @@ export function createPluginToolFactoryContext(params: {
       ? params.bindExecutionCapabilities?.(
           assertInvocationCurrent,
           record && getPluginInstance(record)?.lifecycle.signal,
+          entry.gatewayHandoffMethods && entry.names.length === 1
+            ? {
+                pluginId: entry.pluginId,
+                toolName: entry.names[0]!,
+                methods: entry.gatewayHandoffMethods,
+                assertPluginCurrent: () => {
+                  if (!authority?.()) {
+                    throw new Error(`Plugin "${entry.pluginId}" tool runtime is no longer active.`);
+                  }
+                },
+              }
+            : undefined,
         )
       : {}),
     ...(continuation
