@@ -61,4 +61,24 @@ it("hands publication to the native owner and rejects model-selected accounts or
     );
   }
   expect(gatewayHandoff).toHaveBeenCalledTimes(1);
+  for (const operation of [
+    {
+      action: "prepare",
+      projectUrl: "https://gitlab.example.test/team/subgroup/app",
+      baseBranch: "develop",
+    },
+    { action: "refresh" },
+  ]) {
+    expect(await tool.execute("checkout-call", operation)).toBe(result);
+    expect(gatewayHandoff).toHaveBeenLastCalledWith({
+      method: `tools.gitlab.publication.${operation.action}`,
+      params: {
+        sessionKey: "agent:main:dashboard:alice",
+        agentId: "main",
+        idempotencyKey: "run-a:checkout-call",
+        operation,
+      },
+      signal: undefined,
+    });
+  }
 });

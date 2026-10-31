@@ -77,15 +77,77 @@ export async function readPersonalGitLabCheckoutTarget(
     cwd,
     beforeRun: action.assertCurrent,
   });
+  action.assertCurrent();
+  return personalGitLabCheckoutTarget(issuer, origin);
+}
+
+function personalGitLabCheckoutTarget(issuer: string, origin: string) {
   if (!origin.startsWith(`${issuer}/`) || !origin.endsWith(".git")) {
     throw new Error("The session does not have a canonical GitLab HTTPS origin.");
   }
   const repository = origin.slice(issuer.length + 1, -4);
-  if (!/^[\w.-]+(?:\/[\w.-]+)+$/u.test(repository)) {
+  if (
+    !/^[\w.-]+(?:\/[\w.-]+)+$/u.test(repository) ||
+    repository.split("/").some((part) => part === "." || part === "..")
+  ) {
     throw new Error("The session GitLab repository path is invalid.");
   }
-  action.assertCurrent();
   return { repository, issuer, gitUrl: origin };
+}
+
+/** Explicit model input selects a project, never an account or local destination. */
+export async function preparePersonalGitLabCheckoutTarget(
+  options: Options,
+  action: PersonalForgeAction,
+  credential: GitLabPublicationCredential,
+  projectUrl: string,
+  baseBranch?: string,
+) {
+  const issuer = issuerFor(options);
+  const target = personalGitLabCheckoutTarget(
+    issuer,
+    projectUrl.endsWith(".git") ? projectUrl : `${projectUrl}.git`,
+  );
+  const project = await preparePersonalGitLabPublicationProject(
+    options,
+    action,
+    credential,
+    target,
+  );
+  const publicationTarget = {
+    issuer,
+    projectId: project.id,
+    projectPath: target.repository,
+    gitUrl: target.gitUrl,
+    webUrl: `${issuer}/${target.repository}`,
+    baseBranch: baseBranch ?? project.default_branch,
+  };
+  const assertCurrent = () => {
+    action.assertCurrent();
+    credential.assertCurrent();
+    if (issuerFor(options) !== issuer) {
+      throw new Error("GitLab server changed; retry checkout preparation.");
+    }
+    assertPersonalGitLabPublicationProjectAllowed(options, project.id);
+  };
+  const api = createGitLabPublicationApi({
+    target: publicationTarget,
+    credentials: credential,
+    assertCurrent,
+  });
+  const branch = z
+    .object({ name: z.string(), commit: z.object({ id: z.string().regex(/^[a-f0-9]{40}$/u) }) })
+    .parse(
+      await api.request({
+        method: "GET",
+        path: `projects/${project.id}/repository/branches/${encodeURIComponent(publicationTarget.baseBranch)}`,
+      }),
+    );
+  assertCurrent();
+  if (branch.name !== publicationTarget.baseBranch) {
+    throw new Error("GitLab checkout branch identity changed.");
+  }
+  return { target: publicationTarget, baseCommit: branch.commit.id, assertCurrent };
 }
 
 async function targetFor(options: Options, action: GitLabPublicationReadAction) {
@@ -133,7 +195,9 @@ export async function preparePersonalGitLabPublicationProject(
     method: "GET",
     path: `projects/${encodeURIComponent(target.repository)}`,
   });
-  const project = z.object({ id: z.number().int().positive() }).parse(value);
+  const project = z
+    .object({ id: z.number().int().positive(), default_branch: z.string().min(1) })
+    .parse(value);
   assertGitLabPublicationProject(value, {
     issuer: target.issuer,
     projectId: project.id,

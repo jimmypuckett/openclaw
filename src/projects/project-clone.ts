@@ -11,6 +11,7 @@ import { resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { sha256HexPrefixCore } from "../infra/crypto-digest.js";
 import type { GitOperationStarter } from "../infra/git-network-retry.js";
+import { hasCommandProcessCleanupError } from "../process/exec-result.js";
 import type { OpenClawStateDatabaseOptions } from "../state/openclaw-state-db.js";
 import { withOpenClawStateLease } from "../state/openclaw-state-lease.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
@@ -21,6 +22,7 @@ import {
   ensureProjectCheckoutCommit,
   ProjectCloneError,
   refreshProjectCheckout,
+  type ProjectCloneGitTransport,
 } from "./project-clone-runtime.js";
 import { parseProjectGitUrl } from "./project-git-url.js";
 import {
@@ -37,8 +39,12 @@ async function existingCanonicalProject(
   cfg: OpenClawConfig,
   canonicalUrl: string,
   options: OpenClawStateDatabaseOptions,
+  admittedSource = false,
 ): Promise<ProjectRegistryRecord | undefined> {
   return (await listProjectRegistry(cfg, options)).find((project) => {
+    if (admittedSource) {
+      return project.source === "cloned" && project.originUrl === canonicalUrl;
+    }
     const origin = project.originUrl
       ? parseProjectGitUrl(project.originUrl, resolveConfiguredGitHubHost(cfg))
       : null;
@@ -46,20 +52,46 @@ async function existingCanonicalProject(
   });
 }
 
-/** Materializes and registers a project from an accepted GitHub remote. */
+/** Materializes an accepted remote; provider callers may supply their canonical admitted source. */
 export async function materializeProjectClone(
-  input: { cfg: OpenClawConfig; gitUrl: string; name?: string; requiredCommit?: string },
+  input: {
+    cfg: OpenClawConfig;
+    gitUrl: string;
+    name?: string;
+    requiredCommit?: string;
+    source?: { url: string; name: string };
+  },
   options: Pick<OpenClawStateDatabaseOptions, "path" | "env"> & {
     signal?: AbortSignal;
     timeoutMs?: number;
     token?: string;
     assertCurrent?: () => void;
     startRun?: GitOperationStarter;
+    transport?: ProjectCloneGitTransport;
   } = {},
 ): Promise<ProjectRegistryRecord> {
   const { cfg, gitUrl, name, requiredCommit } = input;
-  const { signal, timeoutMs, token, assertCurrent, startRun } = options;
-  const parsed = parseProjectGitUrl(gitUrl, resolveConfiguredGitHubHost(cfg));
+  const { signal, timeoutMs, token, assertCurrent, startRun, transport } = options;
+  if (input.source) {
+    const url = URL.parse(input.source.url);
+    if (
+      !url ||
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.href !== input.source.url ||
+      input.source.url !== gitUrl ||
+      !input.source.name.trim()
+    ) {
+      throw new ProjectCloneError(
+        "invalid_url",
+        "The admitted repository must use canonical HTTPS.",
+      );
+    }
+  }
+  const parsed = input.source ?? parseProjectGitUrl(gitUrl, resolveConfiguredGitHubHost(cfg));
   if (!parsed) {
     throw new ProjectCloneError(
       "invalid_url",
@@ -89,7 +121,12 @@ export async function materializeProjectClone(
       // Keep clone as the outer lease and take one candidate checkout lease at a time. A row that
       // moves roots while we wait must be retried under its new root instead of returned stale.
       while (true) {
-        const candidate = await existingCanonicalProject(cfg, parsed.url, databaseOptions);
+        const candidate = await existingCanonicalProject(
+          cfg,
+          parsed.url,
+          databaseOptions,
+          Boolean(input.source),
+        );
         assertCloneCurrent();
         if (!candidate) {
           break;
@@ -98,7 +135,12 @@ export async function materializeProjectClone(
           candidate.repoRoot,
           { ...databaseOptions, signal: lease.signal },
           async (checkoutLease) => {
-            const current = await existingCanonicalProject(cfg, parsed.url, databaseOptions);
+            const current = await existingCanonicalProject(
+              cfg,
+              parsed.url,
+              databaseOptions,
+              Boolean(input.source),
+            );
             assertCloneCurrent();
             checkoutLease.assertOwned();
             if (current?.repoRoot !== candidate.repoRoot) {
@@ -107,6 +149,7 @@ export async function materializeProjectClone(
             if (current.source === "cloned") {
               await configureProjectCheckoutMaintenance(current.repoRoot, {
                 env,
+                transport,
                 signal: checkoutLease.signal,
                 assertCurrent: () => {
                   assertCloneCurrent();
@@ -122,6 +165,7 @@ export async function materializeProjectClone(
                   signal: checkoutLease.signal,
                   timeoutMs,
                   token,
+                  transport,
                   startRun,
                   assertCurrent: () => {
                     assertCloneCurrent();
@@ -141,26 +185,30 @@ export async function materializeProjectClone(
       const displayName = name?.trim() || parsed.name;
       const directoryName = slugifyWorktreeTitle(displayName) ?? "project";
       const target = path.join(resolveStateDir(env), "projects", fingerprint, directoryName);
-      await cloneProjectCheckout(
-        { url: parsed.url, target, requiredCommit },
-        {
-          env,
-          signal: lease.signal,
-          timeoutMs,
-          token,
-          assertCurrent: assertCloneCurrent,
-          startRun,
-        },
-      );
-      lease.assertOwned();
-      const repoRoot = await resolveProjectDirectory(target);
-      lease.assertOwned();
-      return await withProjectCheckoutLifecycle(
-        repoRoot,
-        { ...databaseOptions, signal: lease.signal },
-        async (checkoutLease) => {
-          let registered = false;
-          try {
+      let cloned = false;
+      let registered = false;
+      let repoRoot = target;
+      try {
+        await cloneProjectCheckout(
+          { url: parsed.url, target, requiredCommit },
+          {
+            env,
+            signal: lease.signal,
+            timeoutMs,
+            token,
+            transport,
+            assertCurrent: assertCloneCurrent,
+            startRun,
+          },
+        );
+        cloned = true;
+        assertCloneCurrent();
+        repoRoot = await resolveProjectDirectory(target);
+        assertCloneCurrent();
+        return await withProjectCheckoutLifecycle(
+          repoRoot,
+          { ...databaseOptions, signal: lease.signal },
+          async (checkoutLease) => {
             assertCloneCurrent();
             const prepared = await prepareProjectRegistration({
               path: repoRoot,
@@ -168,6 +216,8 @@ export async function materializeProjectClone(
               originUrl: parsed.url,
               source: "cloned",
             });
+            assertCloneCurrent();
+            checkoutLease.assertOwned();
             return await registerPreparedProjectRegistry(
               prepared,
               checkoutLease,
@@ -177,26 +227,33 @@ export async function materializeProjectClone(
               },
               assertCloneCurrent,
             );
-          } catch (error) {
-            if (
-              registered ||
-              collectNestedErrorCandidates(error).some(
-                (candidate) => extractErrorCode(candidate) === "outcome-unknown",
-              )
-            ) {
-              throw error;
-            }
-            try {
+          },
+        );
+      } catch (error) {
+        if (
+          cloned &&
+          !registered &&
+          !hasCommandProcessCleanupError(error) &&
+          !collectNestedErrorCandidates(error).some(
+            (candidate) => extractErrorCode(candidate) === "outcome-unknown",
+          )
+        ) {
+          try {
+            lease.assertOwned();
+            await withProjectCheckoutLifecycle(repoRoot, databaseOptions, async (checkoutLease) => {
+              const projects = await listProjectRegistry(cfg, databaseOptions);
               lease.assertOwned();
               checkoutLease.assertOwned();
-              await fs.rm(target, { recursive: true, force: true });
-            } catch {
-              // Preserve the registration failure if ownership verification or cleanup fails.
-            }
-            throw error;
+              if (!projects.some((project) => project.repoRoot === repoRoot)) {
+                await fs.rm(target, { recursive: true, force: true });
+              }
+            });
+          } catch {
+            // Retain the new checkout when cleanup ownership cannot be established.
           }
-        },
-      );
+        }
+        throw error;
+      }
     },
   );
 }
@@ -210,6 +267,7 @@ export async function refreshProjectClone(
     token?: string;
     assertCurrent?: () => void;
     startRun?: GitOperationStarter;
+    transport?: ProjectCloneGitTransport;
   } = {},
 ): Promise<void> {
   if (project.source !== "cloned") {
@@ -221,7 +279,7 @@ export async function refreshProjectClone(
     source: project.source,
     originUrl: project.originUrl,
   };
-  const { signal, timeoutMs, token, assertCurrent, startRun } = options;
+  const { signal, timeoutMs, token, assertCurrent, startRun, transport } = options;
   const env = cloneEnvWithPlatformSemantics(options.env ?? process.env);
   const context = captureOpenClawStateWorkerContext({ path: options.path, env });
   await withProjectCheckoutLifecycle(
@@ -259,6 +317,7 @@ export async function refreshProjectClone(
       }
       await configureProjectCheckoutMaintenance(current.repoRoot, {
         env,
+        transport,
         signal: lease.signal,
         assertCurrent: assertRefreshCurrent,
       });
@@ -270,6 +329,7 @@ export async function refreshProjectClone(
           signal: lease.signal,
           timeoutMs,
           token,
+          transport,
           assertCurrent: assertRefreshCurrent,
           startRun,
         },

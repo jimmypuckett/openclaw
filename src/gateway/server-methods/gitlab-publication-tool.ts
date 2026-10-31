@@ -2,7 +2,11 @@ import { parseGitLabPublicationToolRequest } from "@openclaw/gateway-protocol/gi
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/schema/error-codes.js";
 import { capturePluginLifecycleAuthority } from "../../plugins/registry-lifecycle.js";
 import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
+import { withProjectCheckoutLifecycle } from "../../projects/project-checkout.js";
+import { refreshProjectCheckout, ProjectCloneError } from "../../projects/project-clone-runtime.js";
+import { materializeProjectClone, refreshProjectClone } from "../../projects/project-clone.js";
 import { prepareUserProfileRolePolicyAuthority } from "../../state/user-channel-identity-operations.js";
+import { withPersonalForgePublicationWorkspace } from "../forge-personal-publication-custody.js";
 import { prepareGitHubPublicationSession } from "../github-publication-availability.js";
 import {
   personalGitLabPublicationCredential,
@@ -16,7 +20,9 @@ import {
   readPersonalGitLabCheckoutTarget,
   preparePersonalGitLabPublicationProject,
   assertPersonalGitLabPublicationProjectAllowed,
+  preparePersonalGitLabCheckoutTarget,
 } from "../gitlab-personal-publication.js";
+import { prepareGitLabCheckoutGit } from "../gitlab-publication-git.js";
 import { consumeAcceptedPluginGatewayHandoffClaim } from "../plugin-tool-handoff-claim.js";
 import { adoptUnboundPullRequestWorkspace } from "../session-pr-workspace-adoption.js";
 import { resolveLocalWorkspaceOwner } from "../worker-environments/local-workspace-projection.js";
@@ -167,6 +173,29 @@ const handlePublication: GatewayRequestHandler = async (options) => {
     using selected = await prepareGitHubPublicationSession(input.sessionKey, {
       agentId: input.agentId,
       assertCurrent: action.assertCurrent,
+      ...(operation.action === "prepare" || operation.action === "refresh"
+        ? {
+            fields: [
+              "sessionId",
+              "lifecycleRevision",
+              "archivedAt",
+              "repositoryWorkspaceId",
+              "worktree",
+              "owner",
+              "createdActor",
+              "visibility",
+              "incognito",
+              "sessionRoot",
+              "projectId",
+              "deviceFolder",
+              "execNode",
+              "pendingWorktree",
+              "pendingProjectGitUrl",
+              "spawnedCwd",
+              "spawnedWorkspaceDir",
+            ] as const,
+          }
+        : {}),
     });
     const { loaded } = selected;
     if (!loaded.entry || loaded.entry.sessionId !== claim.sessionId) {
@@ -174,6 +203,268 @@ const handlePublication: GatewayRequestHandler = async (options) => {
     }
     const credential = personalGitLabPublicationCredential(await service.credential(action));
     try {
+      if (operation.action === "prepare" || operation.action === "refresh") {
+        const bound = await bindPersonalForgeSessionAction(
+          options,
+          action,
+          input,
+          options.req.method,
+          "GitLab",
+          "operator.sessions.write",
+        );
+        using _ = { [Symbol.dispose]: bound.release };
+        const placements = options.context.workerSessionPlacementService;
+        const withLocalWorkspaceReservation =
+          placements?.withLocalWorkspaceReservation?.bind(placements);
+        if (!withLocalWorkspaceReservation) {
+          throw new Error("Workspace preparation is unavailable during Gateway startup.");
+        }
+        const checkout = async (
+          projectUrl: string,
+          assertWorkspace: () => void,
+          baseBranch?: string,
+        ) => {
+          const admitted = await preparePersonalGitLabCheckoutTarget(
+            options,
+            bound.action,
+            credential,
+            projectUrl,
+            baseBranch,
+          );
+          const assertCurrent = () => {
+            bound.action.assertCurrent();
+            admitted.assertCurrent();
+            assertWorkspace();
+          };
+          assertCurrent();
+          const git = await prepareGitLabCheckoutGit({
+            gitUrl: admitted.target.gitUrl,
+            credentials: credential,
+            assertCurrent,
+          });
+          return { ...admitted, assertCurrent, git };
+        };
+        const resultFor = (
+          prepared: Awaited<ReturnType<typeof checkout>>,
+          workspacePath: string,
+          branch: string,
+        ) => ({
+          status: operation.action === "prepare" ? "prepared" : "refreshed",
+          workspacePath,
+          branch,
+          baseBranch: prepared.target.baseBranch,
+          baseCommit: prepared.baseCommit,
+          publisher: {
+            source: "personal",
+            accountId: credential.account.accountId,
+            login: credential.account.login,
+          },
+          ...(operation.action === "refresh"
+            ? {
+                message:
+                  "Remote refs refreshed; local commits, index and files were preserved. Merge the selected remote branch explicitly when ready.",
+              }
+            : {}),
+        });
+        try {
+          const result = loaded.entry.worktree
+            ? await withPersonalForgePublicationWorkspace(
+                { withLocalWorkspaceReservation },
+                bound.action,
+                async (workspace) => {
+                  const current = await readPersonalGitLabCheckoutTarget(
+                    options,
+                    bound.action,
+                    workspace.worktree.path,
+                  );
+                  if (
+                    operation.action === "prepare" &&
+                    operation.projectUrl !== `${current.issuer}/${current.repository}` &&
+                    operation.projectUrl !== current.gitUrl
+                  ) {
+                    throw new Error(
+                      "This conversation already owns another repository; its files were preserved.",
+                    );
+                  }
+                  const recordedBase = /^(?:refs\/remotes\/)?origin\/(.+)$/u.exec(
+                    workspace.worktree.baseRef ?? "",
+                  )?.[1];
+                  const prepared = await checkout(
+                    current.gitUrl,
+                    () => workspace.assertCurrent(),
+                    operation.action === "prepare" ? operation.baseBranch : recordedBase,
+                  );
+                  try {
+                    await withProjectCheckoutLifecycle(
+                      workspace.worktree.repoRoot,
+                      { signal: bound.action.signal },
+                      async (lease) => {
+                        await refreshProjectCheckout(
+                          { target: workspace.worktree.repoRoot, url: prepared.target.gitUrl },
+                          {
+                            signal: bound.action.signal,
+                            transport: prepared.git.transport,
+                            assertCurrent() {
+                              prepared.assertCurrent();
+                              lease.assertOwned();
+                            },
+                          },
+                        );
+                        prepared.assertCurrent();
+                        const base = await prepared.git.transport.run(
+                          workspace.worktree.repoRoot,
+                          [
+                            "rev-parse",
+                            "--verify",
+                            "--end-of-options",
+                            `refs/remotes/origin/${prepared.target.baseBranch}^{commit}`,
+                          ],
+                          {
+                            signal: bound.action.signal,
+                            beforeRun() {
+                              prepared.assertCurrent();
+                              lease.assertOwned();
+                            },
+                          },
+                        );
+                        prepared.assertCurrent();
+                        if (
+                          base.code !== 0 ||
+                          base.termination !== "exit" ||
+                          !/^[a-f0-9]{40}$/u.test(base.stdout.trim())
+                        ) {
+                          throw new Error(
+                            "GitLab refreshed branch could not be read; local work was preserved.",
+                          );
+                        }
+                        prepared.baseCommit = base.stdout.trim();
+                      },
+                    );
+                    return resultFor(prepared, workspace.worktree.path, workspace.worktree.branch);
+                  } finally {
+                    await prepared.git.close();
+                  }
+                },
+              )
+            : await withLocalWorkspaceReservation(bound.action, async (assertOwned) => {
+                if (operation.action !== "prepare") {
+                  throw new Error(
+                    "Prepare this conversation's GitLab checkout before refreshing it.",
+                  );
+                }
+                const prepared = await checkout(
+                  operation.projectUrl,
+                  assertOwned,
+                  operation.baseBranch,
+                );
+                const assertSourceCurrent = () => {
+                  prepared.assertCurrent();
+                  try {
+                    selected.readCurrent();
+                  } catch (error) {
+                    throw new Error(
+                      "GitLab checkout workspace changed; retry from its current source.",
+                      { cause: error },
+                    );
+                  }
+                };
+                try {
+                  const project = await materializeProjectClone(
+                    {
+                      cfg: options.context.getRuntimeConfig(),
+                      gitUrl: prepared.target.gitUrl,
+                      source: {
+                        url: prepared.target.gitUrl,
+                        name: prepared.target.projectPath.split("/").at(-1)!,
+                      },
+                      requiredCommit: prepared.baseCommit,
+                    },
+                    {
+                      signal: bound.action.signal,
+                      transport: prepared.git.transport,
+                      assertCurrent: assertSourceCurrent,
+                    },
+                  );
+                  assertSourceCurrent();
+                  await refreshProjectClone(project, {
+                    signal: bound.action.signal,
+                    transport: prepared.git.transport,
+                    assertCurrent: assertSourceCurrent,
+                  });
+                  assertSourceCurrent();
+                  await withProjectCheckoutLifecycle(
+                    project.repoRoot,
+                    { signal: bound.action.signal },
+                    async (lease) => {
+                      await adoptUnboundPullRequestWorkspace({
+                        context: options.context,
+                        target: {
+                          sessionKey: input.sessionKey,
+                          agentId: input.agentId,
+                          storePath: loaded.storePath,
+                        },
+                        entry: loaded.entry!,
+                        localSource: project.repoRoot,
+                        checkoutCommit: prepared.baseCommit,
+                        baseRef: `origin/${prepared.target.baseBranch}`,
+                        signal: bound.action.signal,
+                        assertCurrent() {
+                          prepared.assertCurrent();
+                          lease.assertOwned();
+                        },
+                        async verifyBeforeBinding() {
+                          const currentProject = await preparePersonalGitLabPublicationProject(
+                            options,
+                            bound.action,
+                            credential,
+                            {
+                              issuer: prepared.target.issuer,
+                              repository: prepared.target.projectPath,
+                              gitUrl: prepared.target.gitUrl,
+                            },
+                          );
+                          prepared.assertCurrent();
+                          if (currentProject.id !== prepared.target.projectId) {
+                            throw new Error(
+                              "GitLab checkout project identity changed; retry preparation.",
+                            );
+                          }
+                        },
+                      });
+                    },
+                  );
+                  prepared.assertCurrent();
+                  using owner = await resolveLocalWorkspaceOwner({
+                    sessionKey: input.sessionKey,
+                    agentId: input.agentId,
+                    cfg: options.context.getRuntimeConfig(),
+                    assertCurrent: prepared.assertCurrent,
+                  });
+                  if (!owner) {
+                    throw new Error(
+                      "The prepared GitLab workspace is unavailable; retry preparation.",
+                    );
+                  }
+                  owner.assertCurrent();
+                  return resultFor(prepared, owner.worktree.path, owner.worktree.branch);
+                } finally {
+                  await prepared.git.close();
+                }
+              });
+          bound.action.assertCurrent();
+          credential.assertCurrent();
+          options.respond(true, result);
+        } catch (error) {
+          if (error instanceof ProjectCloneError) {
+            throw new Error(
+              "GitLab checkout could not be prepared or refreshed. Verify My GitLab access and retry; existing local work was preserved.",
+              { cause: error },
+            );
+          }
+          throw error;
+        }
+        return;
+      }
       if (operation.action === "publish" && operation.workspacePath !== undefined) {
         const source = await prepareSessionCreateRequestedCwd({
           cfg: options.context.getRuntimeConfig(),
@@ -290,6 +581,8 @@ const handlePublication: GatewayRequestHandler = async (options) => {
 };
 
 export const gitLabPublicationToolHandlers: GatewayRequestHandlers = {
+  "tools.gitlab.publication.prepare": handlePublication,
+  "tools.gitlab.publication.refresh": handlePublication,
   "tools.gitlab.publication.publish": handlePublication,
   "tools.gitlab.publication.status": handlePublication,
   "tools.gitlab.publication.confirm": handlePublication,

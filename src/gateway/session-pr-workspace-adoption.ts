@@ -27,6 +27,8 @@ export async function adoptUnboundPullRequestWorkspace(params: {
   entry: InternalSessionEntry;
   sandbox?: SandboxContext;
   localSource?: string;
+  checkoutCommit?: string;
+  baseRef?: string;
   assertCurrent: () => void;
   verifyBeforeBinding?: () => Promise<void>;
   signal?: AbortSignal;
@@ -157,17 +159,22 @@ export async function adoptUnboundPullRequestWorkspace(params: {
       }
       const source = params.localSource;
       const gitOptions = { signal: params.signal, beforeRun: assertIdle };
-      if (source && (await requireGit(source, ["status", "--porcelain"], gitOptions))) {
+      if (
+        source &&
+        !params.checkoutCommit &&
+        (await requireGit(source, ["status", "--porcelain"], gitOptions))
+      ) {
         throw new Error("Commit the task changes before publishing this checkout.");
       }
-      const checkoutCommit = source
-        ? await requireGit(source, ["rev-parse", "HEAD"], gitOptions)
-        : undefined;
+      const checkoutCommit =
+        params.checkoutCommit ??
+        (source ? await requireGit(source, ["rev-parse", "HEAD"], gitOptions) : undefined);
       const prepared = await prepareSessionWorktree({
         cfg,
         target: { ...target, key: target.sessionKey, entry },
         workspace: source ?? { kind: "empty" },
         checkoutCommit,
+        baseRef: params.baseRef,
         runSetupScript: false,
         signal: params.signal,
         commitGuard: assertIdle,

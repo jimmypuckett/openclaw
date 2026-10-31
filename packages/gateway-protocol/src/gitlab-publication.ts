@@ -13,6 +13,15 @@ const confirm = SessionGitLabConfirmParamsSchema.properties;
 export const GitLabPublicationOperationSchema = Type.Union([
   Type.Object(
     {
+      action: Type.Literal("prepare"),
+      projectUrl: Type.String({ minLength: 1, maxLength: 2048 }),
+      baseBranch: publish.baseBranch,
+    },
+    { additionalProperties: false },
+  ),
+  Type.Object({ action: Type.Literal("refresh") }, { additionalProperties: false }),
+  Type.Object(
+    {
       action: Type.Literal("publish"),
       title: publish.title,
       body: publish.body,

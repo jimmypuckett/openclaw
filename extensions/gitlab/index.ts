@@ -67,7 +67,7 @@ export default definePluginEntry({
           async: false,
           catalogMode: "direct-only",
           description:
-            "Publish this conversation's repository changes as the requesting person's connected My GitLab account. Never uses System, agent, CLI or another person's credentials. Requires the user's instruction to publish. action publish creates a draft MR by default; supply baseBranch when the repository workflow selects a branch other than the project default. For a clean local checkout not yet owned by this conversation, supply workspacePath: the native host adopts an isolated managed worktree and preserves earlier files. Use bootstrapDraft:true only when the user requests an initial empty draft MR before implementation; it requires draft:true and an unchanged tree on a new remote branch. Publication yields the turn and its result resumes this same conversation; started/requested/publishing is not completion. Retain requestId and exact SHA. action status reads an accepted request; never resubmit an uncertain write. action confirm uses requestId plus the exact requestDigest, generation and account returned in status.confirmation to reconcile the original request. No arbitrary repository, account or publishing-session selector is accepted. Missing personal authorization requires connecting My GitLab in Profile. Use gitlab_issues for issues and comments.",
+            "Prepare, refresh and publish this conversation's repository as the requesting person's connected My GitLab account. Never uses System, agent, CLI or another person's credentials. action prepare takes an explicit canonical HTTPS projectUrl and optional baseBranch, creates an isolated managed checkout, and preserves earlier files. action refresh authenticates through the same host-owned path and updates remote refs while preserving local commits, index and dirty files; merge the fetched branch explicitly when ready. No OAuth credential is exported to the shell. Requires the user's instruction to publish for action publish, which creates a draft MR by default; supply baseBranch when the repository workflow selects a branch other than the project default. For a clean local checkout not yet owned by this conversation, supply workspacePath for native worktree adoption. Use bootstrapDraft:true only when the user requests an initial empty draft MR before implementation; it requires draft:true and an unchanged tree on a new remote branch. Preparation, refresh and publication yield the turn and resume this same conversation; started/requested/publishing is not completion. Retain requestId and exact SHA. action status reads an accepted request; never resubmit an uncertain write. action confirm uses requestId plus the exact requestDigest, generation and account returned in status.confirmation to reconcile the original request. No account or publishing-session selector is accepted. Missing personal authorization requires connecting My GitLab in Profile. Use gitlab_issues for issues and comments.",
           parameters: GitLabPublicationOperationSchema,
           async execute(toolCallId, input, signal) {
             context.assertInvocationCurrent();
@@ -115,6 +115,8 @@ export default definePluginEntry({
         gatewayHandoffMethods: [
           "tools.gitlab.publication.publish",
           "tools.gitlab.publication.confirm",
+          "tools.gitlab.publication.prepare",
+          "tools.gitlab.publication.refresh",
         ],
       },
     );

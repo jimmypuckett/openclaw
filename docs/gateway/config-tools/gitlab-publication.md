@@ -54,6 +54,19 @@ the selected connection before starting another authorization.
 
 ## Publish from a session
 
+Use `gitlab_publish` with `action: "prepare"` and the canonical HTTPS `projectUrl`
+to prepare an isolated checkout using your connected **My GitLab** account. Supply
+`baseBranch` when the task starts from a branch other than the project default.
+The Gateway owns authentication, creates the managed source and session worktree,
+and preserves the conversation's earlier files. No SSH setup or shell token is needed.
+
+Use `action: "refresh"` in that conversation to fetch current remote refs through
+the same authenticated path. Refresh preserves the local branch, local commits,
+index, dirty files and untracked files. It does not merge or reset your checkout;
+merge the selected remote branch explicitly when you are ready. The result reports
+the workspace path, selected base and connected publisher. Revoked access or a
+changed project policy stops preparation or refresh without a credential fallback.
+
 The bundled `gitlab_publish` tool publishes as the requesting person's connected
 **My GitLab** account. It never selects System GitLab, an agent override or another
 participant's connection. A publication call yields the current turn, runs under

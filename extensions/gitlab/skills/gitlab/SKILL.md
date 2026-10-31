@@ -1,6 +1,6 @@
 ---
 name: gitlab
-description: Publish repository changes or manage GitLab issues, comments and discussions as the signed-in requesting user through native GitLab tools.
+description: Prepare and refresh isolated GitLab checkouts, publish repository changes, or manage issues, comments and discussions as the signed-in requesting user through native GitLab tools.
 ---
 
 # GitLab issues and comments
@@ -38,6 +38,17 @@ needed in Profile and stop that action. Never ask for an OAuth token.
    comment or reply, and never switch credentials to recover a failure.
 
 ## Repository publication
+
+Before editing a private repository, use `gitlab_publish` with `action: "prepare"`,
+its canonical HTTPS `projectUrl`, and optional `baseBranch`. This prepares an
+isolated managed worktree through the requester's connected account. Keep the
+returned `workspacePath` and use it for local changes. Do not repair an SSH origin
+or attempt an unauthenticated shell clone as a substitute.
+
+Use `action: "refresh"` to fetch current remote refs through the same host-owned
+authentication. Local commits, index and dirty/untracked files stay intact.
+Refresh does not merge or reset local work; merge the fetched branch explicitly
+when the task requires it. Never request or export the OAuth credential.
 
 Use `gitlab_publish` when the user requests repository publication. It uses the
 same requesting person's connected **My GitLab** account, with no shared fallback.

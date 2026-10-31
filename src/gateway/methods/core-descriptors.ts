@@ -7,6 +7,16 @@ const SIDECAR_CONTROL_WRITE = { startup: true, controlPlaneWrite: true } as cons
 const GITLAB_OAUTH_WRITE = SIDECAR_CONTROL_WRITE;
 const UNADVERTISED = { advertise: false } as const;
 const PROFILE_DEPENDENT = { profileAccess: "required" } as const;
+const GITLAB_PUBLICATION_WRITE = [
+  "gitlab-publication-tool",
+  "operator.sessions.write",
+  "2026.10",
+  {
+    ...UNADVERTISED,
+    ...PROFILE_DEPENDENT,
+    handoff: { pluginId: "gitlab", toolName: "gitlab_publish" },
+  },
+] as const;
 const PROFILE_STARTUP = { startup: true, ...PROFILE_DEPENDENT } as const;
 const SESSION_METADATA_READ = {
   shareKey: operatorReadShareKey,
@@ -736,28 +746,10 @@ export const CORE_GATEWAY_METHOD_SPECS = [
     "2026.10",
     { ...UNADVERTISED, ...PROFILE_DEPENDENT },
   ],
-  [
-    "tools.gitlab.publication.publish",
-    "gitlab-publication-tool",
-    "operator.sessions.write",
-    "2026.10",
-    {
-      ...UNADVERTISED,
-      ...PROFILE_DEPENDENT,
-      handoff: { pluginId: "gitlab", toolName: "gitlab_publish" },
-    },
-  ],
-  [
-    "tools.gitlab.publication.confirm",
-    "gitlab-publication-tool",
-    "operator.sessions.write",
-    "2026.10",
-    {
-      ...UNADVERTISED,
-      ...PROFILE_DEPENDENT,
-      handoff: { pluginId: "gitlab", toolName: "gitlab_publish" },
-    },
-  ],
+  ["tools.gitlab.publication.prepare", ...GITLAB_PUBLICATION_WRITE],
+  ["tools.gitlab.publication.refresh", ...GITLAB_PUBLICATION_WRITE],
+  ["tools.gitlab.publication.publish", ...GITLAB_PUBLICATION_WRITE],
+  ["tools.gitlab.publication.confirm", ...GITLAB_PUBLICATION_WRITE],
   [
     "tools.gitlab.publication.status",
     "gitlab-publication-tool",

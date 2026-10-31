@@ -61,6 +61,8 @@ const SESSION_TARGET_POLICY_BY_METHOD = new Map<string, SessionTargetPolicy>([
   ["sessions.gitlab.confirm", { fields: ["sessionKey"], required: true }],
   ["sessions.gitlab.publish", { fields: ["sessionKey"], required: true }],
   ["tools.gitlab.publication.publish", { fields: ["sessionKey"], required: true }],
+  ["tools.gitlab.publication.prepare", { fields: ["sessionKey"], required: true }],
+  ["tools.gitlab.publication.refresh", { fields: ["sessionKey"], required: true }],
   ["tools.gitlab.publication.confirm", { fields: ["sessionKey"], required: true }],
   ["tools.gitlab.publication.status", { fields: ["sessionKey"], readOnly: true }],
   ["sessions.github.publish", { fields: ["sessionKey"], required: true }],

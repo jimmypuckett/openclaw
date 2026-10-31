@@ -54,8 +54,7 @@ const expectFile = (file: string, content: string) =>
   expect(fs.readFile(file, "utf8")).resolves.toBe(content);
 const expectMissing = (file: string) =>
   expect(fs.lstat(file)).rejects.toMatchObject({ code: "ENOENT" });
-async function writeArtifact(target: string, name: string, content: string, recursive = false) {
-  await fs.mkdir(target, { recursive });
+async function writeArtifact(target: string, name: string, content: string) {
   await fs.writeFile(path.join(target, name), content);
 }
 function uncertainFailure() {
@@ -83,6 +82,46 @@ it("preserves an existing checkout when its target cannot be inspected", async (
   expect(error).toMatchObject({ failure: "clone_failed" });
   expect(command).not.toHaveBeenCalled();
 });
+
+it.each([false, true])(
+  "cleans a revoked clone only when this call created its target (preexisting: %s)",
+  async (preexisting) => {
+    const target = targetPath();
+    const sentinel = path.join(target, "README.md");
+    if (preexisting) {
+      await fs.mkdir(target);
+      await fs.writeFile(sentinel, "existing project data");
+    }
+    const revoked = new Error("The requesting account was revoked.");
+    let current = true;
+    const assertCurrent = () => {
+      if (!current) {
+        throw revoked;
+      }
+    };
+    const run = vi.fn(async () => {
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(sentinel, "settled clone data");
+      current = false;
+      assertCurrent();
+      return successfulGit;
+    });
+
+    const error = await capture(
+      cloneProjectCheckout({ url: projectUrl, target }, { transport: { run }, assertCurrent }),
+    );
+
+    if (preexisting) {
+      expect(error).toMatchObject({ failure: "target_exists" });
+      expect(run).not.toHaveBeenCalled();
+      await expectFile(sentinel, "existing project data");
+    } else {
+      expect(error).toBe(revoked);
+      expect(run).toHaveBeenCalledOnce();
+      await expectMissing(target);
+    }
+  },
+);
 
 it.each([128, "throw"] as const)(
   "retains a clone after uncertain cleanup (%s)",
@@ -116,10 +155,10 @@ it.each([false, true])(
     let attempts = 0;
     const command = mockGit().mockImplementation(async () => {
       if (attempts++ === 0) {
-        await writeArtifact(target, "partial.txt", "partial clone", fails);
+        await writeArtifact(target, "partial.txt", "partial clone");
         return failedClone;
       }
-      await expectMissing(target);
+      expect(await fs.readdir(target)).toEqual([]);
       await writeArtifact(target, "README.md", "retried checkout");
       return { ...failedClone, code: 0, stderr: "" };
     });

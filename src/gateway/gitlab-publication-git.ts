@@ -2,8 +2,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveExecutablePath } from "../infra/executable-path.js";
-import { gitNullConfigPath } from "../infra/git-exec.js";
+import { executeGitCommand, gitNullConfigPath } from "../infra/git-exec.js";
+import { gitCommandName } from "../infra/git-network-retry.js";
+import {
+  CommandProcessCleanupError,
+  hasCommandProcessCleanupError,
+  readCommandProcessFailure,
+} from "../process/exec-result.js";
 import { runCommandBuffered } from "../process/exec.js";
+import type { ProjectCloneGitTransport } from "../projects/project-clone-runtime.js";
 import { publicationPushArgs } from "./forge-publication-git.js";
 import type {
   GitLabPublicationCredentials,
@@ -11,6 +18,108 @@ import type {
 } from "./gitlab-publication-adapter.js";
 
 const oid = /^[a-f0-9]{40}$/u;
+
+function privateGitLabEnvironment(home: string): NodeJS.ProcessEnv {
+  return {
+    PATH: process.env.PATH,
+    HOME: home,
+    ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+    ...(process.env.COMSPEC ? { COMSPEC: process.env.COMSPEC } : {}),
+    GIT_CONFIG_GLOBAL: gitNullConfigPath(),
+    GIT_CONFIG_SYSTEM: gitNullConfigPath(),
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_NO_LAZY_FETCH: "1",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_COUNT: "0",
+  };
+}
+
+function privateGitLabAuthentication(gitUrl: string, token: string): NodeJS.ProcessEnv {
+  return {
+    GIT_CONFIG_COUNT: "3",
+    GIT_CONFIG_KEY_0: `http.${gitUrl}.extraheader`,
+    GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString("base64")}`,
+    GIT_CONFIG_KEY_1: "http.followRedirects",
+    GIT_CONFIG_VALUE_1: "false",
+    GIT_CONFIG_KEY_2: "credential.helper",
+    GIT_CONFIG_VALUE_2: "",
+  };
+}
+
+/** Checkout lifecycle commands share publication's private credential and process boundary. */
+export async function prepareGitLabCheckoutGit(params: {
+  gitUrl: string;
+  credentials: GitLabPublicationCredentials;
+  assertCurrent: () => void;
+}) {
+  params.assertCurrent();
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gitlab-checkout-"));
+  const env = privateGitLabEnvironment(home);
+  let retainHome = false;
+  const transport: ProjectCloneGitTransport = {
+    async run(cwd, args, options) {
+      const assertCurrent = () => {
+        params.assertCurrent();
+        options.beforeRun?.();
+      };
+      assertCurrent();
+      const execute = async (token?: string) => {
+        assertCurrent();
+        let result;
+        try {
+          result = await executeGitCommand(
+            cwd ?? home,
+            ["-c", `core.hooksPath=${os.devNull}`, "-c", "core.fsmonitor=false", ...args],
+            {
+              ...options,
+              baseEnv: {},
+              env: {
+                ...env,
+                // The staged fetch borrows only its lifecycle owner's object directory.
+                ...(options.env?.GIT_OBJECT_DIRECTORY
+                  ? { GIT_OBJECT_DIRECTORY: options.env.GIT_OBJECT_DIRECTORY }
+                  : {}),
+                ...(token === undefined ? {} : privateGitLabAuthentication(params.gitUrl, token)),
+              },
+              beforeRun: assertCurrent,
+            },
+          );
+        } catch (error) {
+          retainHome ||=
+            hasCommandProcessCleanupError(error) ||
+            readCommandProcessFailure(error)?.cleanup === "uncertain";
+          if (retainHome) {
+            throw new CommandProcessCleanupError({ cause: error });
+          }
+          assertCurrent();
+          throw new Error(
+            "GitLab checkout Git operation failed; verify My GitLab access and retry.",
+            { cause: error },
+          );
+        }
+        if (result.cleanup === "uncertain") {
+          retainHome = true;
+          throw new CommandProcessCleanupError();
+        }
+        assertCurrent();
+        return result;
+      };
+      const command = gitCommandName(args);
+      return command === "clone" || command === "fetch" || command === "ls-remote"
+        ? params.credentials.withToken((token) => execute(token))
+        : execute();
+    },
+  };
+  return {
+    transport,
+    async close() {
+      if (!retainHome) {
+        await fs.rm(home, { recursive: true, force: true });
+      }
+    },
+  };
+}
 
 export type GitLabPublicationGit = Awaited<ReturnType<typeof prepareGitLabPublicationGit>>;
 
@@ -31,19 +140,7 @@ export async function prepareGitLabPublicationGit(params: {
     await fs.rm(temporary, { recursive: true, force: true });
     throw new Error("GitLab publication requires Git.");
   }
-  const commonEnv: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH,
-    HOME: temporary,
-    ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
-    ...(process.env.COMSPEC ? { COMSPEC: process.env.COMSPEC } : {}),
-    GIT_CONFIG_GLOBAL: gitNullConfigPath(),
-    GIT_CONFIG_SYSTEM: gitNullConfigPath(),
-    GIT_CONFIG_NOSYSTEM: "1",
-    GIT_NO_REPLACE_OBJECTS: "1",
-    GIT_NO_LAZY_FETCH: "1",
-    GIT_TERMINAL_PROMPT: "0",
-    GIT_CONFIG_COUNT: "0",
-  };
+  const commonEnv = privateGitLabEnvironment(temporary);
   const run = async (
     args: string[],
     options: { input?: string | Buffer; env?: NodeJS.ProcessEnv } = {},
@@ -138,17 +235,7 @@ export async function prepareGitLabPublicationGit(params: {
       directory,
       async run(args: string[], token?: string) {
         const scopedHeader =
-          token === undefined
-            ? {}
-            : {
-                GIT_CONFIG_COUNT: "3",
-                GIT_CONFIG_KEY_0: `http.${params.target.gitUrl}.extraheader`,
-                GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(`oauth2:${token}`).toString("base64")}`,
-                GIT_CONFIG_KEY_1: "http.followRedirects",
-                GIT_CONFIG_VALUE_1: "false",
-                GIT_CONFIG_KEY_2: "credential.helper",
-                GIT_CONFIG_VALUE_2: "",
-              };
+          token === undefined ? {} : privateGitLabAuthentication(params.target.gitUrl, token);
         return await run(["--git-dir", directory, ...args], { env: { ...env, ...scopedHeader } });
       },
       async close() {
